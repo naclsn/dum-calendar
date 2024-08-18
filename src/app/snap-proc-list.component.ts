@@ -1,15 +1,17 @@
 import { Component, HostListener, Input, OnInit, Type, ElementRef, inject } from '@angular/core';
 import { NgComponentOutlet } from '@angular/common';
 
+type CacheItem<Ins> = { index: number, inputs?: Ins };
+
 @Component({
     selector: 'snap-proc-list',
     standalone: true,
     imports: [NgComponentOutlet],
     template: `
-        @for (inputs of cachedInputs.slice(cachedInputsOffset, cachedInputsOffset+showCount*3);
-              track cachedInputsOffset + $index) {
+        @for (it of cached.slice(cachedOffset, cachedOffset+showCount*3);
+              track it.index) {
             <div>
-                <ng-container *ngComponentOutlet="component; inputs: inputs" />
+                <ng-container *ngComponentOutlet="component; inputs: it.inputs" />
             </div>
         }
     `,
@@ -29,7 +31,7 @@ export class SnapProcList<
     @Input({ required: true }) firstIndex!: number;
     @Input({ required: true }) showCount!: number;
     @Input({ required: true }) component!: Item;
-    @Input({ required: true }) nthInputs!: (index: number) => Ins;
+    @Input({ required: true }) nthInputs!: (index: number) => Promise<Ins>;
 
     pageSize = 1;
 
@@ -49,13 +51,19 @@ export class SnapProcList<
     // page managment stuff {{{
     // TODO: cache growth control (trim to size when too big)
     // private but used in template
-    cachedInputs: Ins[] = [];
+    cached: CacheItem<Ins>[] = [];
     // private but used in template
-    cachedInputsOffset = 0;
+    cachedOffset = 0;
+
+    private make(index: number): CacheItem<Ins> {
+        let it: CacheItem<Ins> = { index };
+        this.nthInputs(index).then(r => it.inputs = r);
+        return it;
+    }
 
     private init3Pages() {
         for (let k = 0; k < this.showCount*3; ++k) {
-            this.cachedInputs.push(this.nthInputs(this.firstIndex-this.showCount + k));
+            this.cached.push(this.make(this.firstIndex-1 -this.showCount + k));
         }
     }
 
@@ -64,19 +72,19 @@ export class SnapProcList<
 
     private previousPage() {
         --this._currentPage;
-        if (this.cachedInputsOffset < this.showCount) {
+        if (this.cachedOffset < this.showCount) {
             for (let k = 0; k < this.showCount; ++k) {
-                this.cachedInputs.unshift(this.nthInputs(this.currentPage*this.showCount - k-1));
+                this.cached.unshift(this.make(this.firstIndex-1 +this.currentPage*this.showCount - k-1));
             }
-        } else this.cachedInputsOffset-= this.showCount;
+        } else this.cachedOffset-= this.showCount;
     }
 
     private nextPage() {
         ++this._currentPage;
-        this.cachedInputsOffset+= this.showCount;
-        if (this.cachedInputs.length < this.cachedInputsOffset+this.showCount*3) {
+        this.cachedOffset+= this.showCount;
+        if (this.cached.length < this.cachedOffset+this.showCount*3) {
             for (let k = 0; k < this.showCount; ++k) {
-                this.cachedInputs.push(this.nthInputs((this.currentPage+1)*this.showCount + k));
+                this.cached.push(this.make(this.firstIndex-1 +(this.currentPage+1)*this.showCount + k));
             }
         }
     }
@@ -87,10 +95,10 @@ export class SnapProcList<
     get inPage(): number { return this._inPage; }
     private set inPage(value: number) {
         this._inPage = value;
-        if (this.inPage < -.5) {
+        if (this.inPage < -.75) {
             this.previousPage();
             this.inPage+= 1;
-        } else if (.5 < this.inPage) {
+        } else if (.75 < this.inPage) {
             this.nextPage();
             this.inPage-= 1;
         }
