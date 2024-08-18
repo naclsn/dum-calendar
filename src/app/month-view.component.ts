@@ -10,13 +10,28 @@ import { SnapProcList } from './snap-proc-list.component';
     standalone: true,
     imports: [],
     template: `
-        <span>{{week_in_year}}: {{first_day_in_month}}..</span>
+        <span>{{weekInYear}}</span>
+        <span>{{firstDayInMonth+0}}</span>
+        <span>{{firstDayInMonth+1}}</span>
+        <span>{{firstDayInMonth+2}}</span>
+        <span>{{firstDayInMonth+3}}</span>
+        <span>{{firstDayInMonth+4}}</span>
+        <span>{{firstDayInMonth+5}}</span>
+        <span>{{firstDayInMonth+6}}</span>
     `,
-    styles: ``
+    styles: `
+        span {
+            display: inline-block;
+            width: 3rem;
+            text-align: right;
+        }
+    `,
 })
 export class WeekComponent {
-    @Input() week_in_year!: number;
-    @Input() first_day_in_month!: number;
+
+    @Input() weekInYear!: number;
+    @Input() firstDayInMonth!: number;
+
 }
 
 @Component({
@@ -24,18 +39,21 @@ export class WeekComponent {
     standalone: true,
     imports: [WeekComponent, SnapProcList],
     template: `
-        <p>header</p>
+        <p>n, mon.tue.wed.thu.fri.sat.sun</p>
         <snap-proc-list
-            [first_index]=0 [show_count]=6
-            [component]=component [nth_inputs]=bidoof />
+            [firstIndex]=0 [showCount]=6
+            [component]=component [nthInputs]=getWeek />
     `,
-    styles: ``
+    styles: ``,
 })
 export class MonthViewComponent {
-    top!: number;
+
     component = WeekComponent;
-    bidoof = (n: number) => ({
-        week_in_year: n,
-        first_day_in_month: 42,
-    });
+    getWeek(n: number) {
+        return {
+            weekInYear: n,
+            firstDayInMonth: 7*n,
+        };
+    }
+
 }
