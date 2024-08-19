@@ -21,6 +21,10 @@ type DayInfo = {
         }
     `,
     styles: `
+        :host {
+            margin: 0px;
+        }
+
         .jan { --color: skyblue; }
         .feb { --color: pink; }
         .mar { --color: lime; }
@@ -37,7 +41,7 @@ type DayInfo = {
         span {
             display: inline-block;
             width: 3rem;
-            height: 3rem;
+            --height: 3rem;
             text-align: right;
             color: var(--color);
         }
@@ -55,21 +59,26 @@ export class WeekComponent {
     standalone: true,
     imports: [WeekComponent, SnapProcList],
     template: `
-        <p>TODO: header (n, mon.tue.wed.thu.fri.sat.sun), year, months, maybe change snapping logic, data layer, styling</p>
+        <p>TODO: header (n, mon.tue.wed.thu.fri.sat.sun), year, months, data layer, styling</p>
         <snap-proc-list
-            [firstIndex]=firstIndex() [showCount]=7
-            [component]=component [nthInputs]=getWeek />
+            [component]=component
+            [firstIndex]=firstIndex
+            [nthInputs]=getWeek
+            [snapOffsetPx]='-23/2'
+            [snapOffsetElm]=-1 />
     `,
     styles: `
+        snap-proc-list {
+            height: calc(23px * 8);
+        }
     `,
 })
 export class MonthViewComponent {
 
     component = WeekComponent;
-    firstIndex() {
+    get firstIndex() {
         const weeksSinceZero = (Date.now() / MonthViewComponent.MS_IN_WEEK) |0;
-        // rem: to center in, so +3 rows (base 0)
-        return weeksSinceZero - (3-weeksSinceZero%7);
+        return weeksSinceZero;
     }
 
     static MONTHS = [
@@ -89,7 +98,7 @@ export class MonthViewComponent {
     static MS_IN_DAY = 86400000;
     static MS_IN_WEEK = MonthViewComponent.MS_IN_DAY*7;
 
-    async getWeek(weekInTime: number) {
+    getWeek(weekInTime: number) {
         // rem: -3 days is because date(0) is a thursday
         const monday = new Date(weekInTime * MonthViewComponent.MS_IN_WEEK - 3*MonthViewComponent.MS_IN_DAY);
         const yearInTime = monday.getFullYear();
@@ -97,8 +106,8 @@ export class MonthViewComponent {
         const dayInMonth = monday.getDate();
 
         const month = MonthViewComponent.MONTHS[monthInYear];
-        // rem: leap years
-        const daysInMonth = month.days + (!(yearInTime%4) && (!(yearInTime%100) || yearInTime%400) ?1:0);
+        // rem: +(.. ?1:0) leap years
+        const daysInMonth = month.days + (1 == monthInYear && !(yearInTime%4) && (!(yearInTime%100) || yearInTime%400) ?1:0);
 
         const days: DayInfo[] = [];
         for (let k = 0; k < 7; ++k) {
@@ -119,8 +128,11 @@ export class MonthViewComponent {
         const weekNumber = weekInTime - firstWeekInTime;
 
         return {
-            weekNumber,
-            days,
+            control: days.some(day => 1 == day.number),
+            promise: Promise.resolve({
+                weekNumber,
+                days,
+            }),
         };
     }
 

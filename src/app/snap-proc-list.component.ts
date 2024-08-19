@@ -1,15 +1,18 @@
 import { Component, HostListener, Input, OnInit, Type, ElementRef, inject } from '@angular/core';
 import { NgComponentOutlet } from '@angular/common';
 
-type CacheItem<Ins> = { index: number, inputs?: Ins };
+type CacheItem<Ins> = {
+    index: number;
+    control: boolean;
+    inputs?: Ins;
+};
 
 @Component({
     selector: 'snap-proc-list',
     standalone: true,
     imports: [NgComponentOutlet],
     template: `
-        @for (it of cached.slice(cachedOffset, cachedOffset+showCount*3);
-              track it.index) {
+        @for (it of renderedSlice; track it.index) {
             <div>
                 <ng-container *ngComponentOutlet="component; inputs: it.inputs" />
             </div>
@@ -28,102 +31,175 @@ export class SnapProcList<
     Ins extends Record<string, unknown> | undefined,
 > implements OnInit {
 
-    @Input({ required: true }) firstIndex!: number;
-    @Input({ required: true }) showCount!: number;
     @Input({ required: true }) component!: Item;
-    @Input({ required: true }) nthInputs!: (index: number) => Promise<Ins>;
+    @Input({ required: true }) firstIndex!: number;
+    @Input({ required: true }) nthInputs!: (index: number) => { control: boolean, promise: Promise<Ins> };
 
-    pageSize = 1;
+    @Input() snapOffsetPx?: number;
+    @Input() snapOffsetElm?: number;
 
     private el: HTMLElement = inject(ElementRef).nativeElement;
 
     ngOnInit() {
-        this.init3Pages();
-        setTimeout(() => {
-            // FIXME: works but not a correct solution;
-            // causes a flash with first rendering being 3x taller
-            this.pageSize = this.el.offsetHeight/3;
-            this.el.style.height = this.pageSize+'px';
-            this.inPage = 0;
-        });
+        // [ .. < ctrl .. ctrl .. {|ctrl .%.. ctrl }.. ctrl .. ctrl > .. ]
+        //                ^prevguard                   ^nextguard
+        //
+        // [] cached   <> rendered   {} visible
+        // | top (first visible)   % firstIndex
+        //
+        // guards are rendered-base indices
+
+        // visible central 'page'
+        const one = this.loadNth(this.firstIndex);
+        this.cached.push(one);
+        if (!one.control) this.loadToPreviousControl();
+        this.loadToNextControl();
+
+        // previous to guard, then previous to control again
+        this.loadToPreviousControl();
+        const lengthWhenPrevGuardIsZero = this.cached.length;
+        this.loadToPreviousControl();
+        this.previousGuardControl = this.cached.length - lengthWhenPrevGuardIsZero;
+
+        // next to guard, then next to control again
+        this.loadToNextControl();
+        this.nextGuardControl = this.cached.length-1;
+        this.loadToNextControl();
+
+        this.renderedCount = this.cached.length;
+        setTimeout(() => this.snapTo(this.currentControl));
     }
 
-    // page managment stuff {{{
+    // page managment {{{
     // TODO: cache growth control (trim to size when too big)
-    // private but used in template
-    cached: CacheItem<Ins>[] = [];
-    // private but used in template
-    cachedOffset = 0;
+    private cached: CacheItem<Ins>[] = [];
+    private cachedOffset = 0;
+    private renderedCount = 0;
+    get renderedSlice() { return this.cached.slice(this.cachedOffset, this.cachedOffset+this.renderedCount); }
 
-    private make(index: number): CacheItem<Ins> {
-        let it: CacheItem<Ins> = { index };
-        this.nthInputs(index).then(r => it.inputs = r);
+    previousGuardControl = 0;
+    nextGuardControl = 0;
+
+    get currentControl() {
+        let r = this.previousGuardControl;
+        while (!this.renderedSlice[++r].control);
+        return r;
+    }
+    get adjacentControl() {
+        let r = this.nextGuardControl;
+        while (!this.renderedSlice[--r].control);
+        return r;
+    }
+    //get currentControlInfo() { return this.renderedSlice[this.currentControl]; }
+
+    private loadNth(index: number): CacheItem<Ins> {
+        const { control, promise } = this.nthInputs(index);
+        const it: CacheItem<Ins> = { index, control };
+        promise.then(inputs => it.inputs = inputs);
         return it;
     }
 
-    private init3Pages() {
-        for (let k = 0; k < this.showCount*3; ++k) {
-            this.cached.push(this.make(this.firstIndex-1 -this.showCount + k));
+    private loadToPreviousControl() {
+        let first: CacheItem<Ins>;
+        do {
+            first = this.loadNth(this.cached[0].index-1);
+            this.cached.unshift(first);
+        } while (!first.control && this.cached.length < 500);
+    }
+
+    private loadToNextControl() {
+        let last: CacheItem<Ins>;
+        do {
+            last = this.loadNth(this.cached[this.cached.length-1].index+1);
+            this.cached.push(last);
+        } while (!last.control && this.cached.length < 500);
+    }
+
+    private slideControlWindowPrevious() {
+        // rem: -1 to keep the control
+        this.renderedCount-= this.renderedCount - this.nextGuardControl -1;
+
+        if (0 === this.cachedOffset) {
+            const lengthWhenPrevGuardIsZero = this.cached.length;
+            this.loadToPreviousControl();
+            const addedCount = this.cached.length - lengthWhenPrevGuardIsZero;
+            this.previousGuardControl = addedCount;
+            this.renderedCount+= addedCount;
+        } else {
+            let addedCount = 0;
+            while (!this.cached[--this.cachedOffset].control) ++addedCount;
+            this.previousGuardControl = addedCount;
+            this.renderedCount+= addedCount;
         }
+
+        this.nextGuardControl = this.renderedCount-1;
+        while (!this.renderedSlice[--this.nextGuardControl].control);
+
     }
 
-    private _currentPage: number = 0;
-    get currentPage(): number { return this._currentPage; }
+    private slideControlWindowNext() {
+        this.renderedCount-= this.previousGuardControl;
+        this.cachedOffset+= this.previousGuardControl;
 
-    private previousPage() {
-        --this._currentPage;
-        if (this.cachedOffset < this.showCount) {
-            for (let k = 0; k < this.showCount; ++k) {
-                this.cached.unshift(this.make(this.firstIndex-1 +this.currentPage*this.showCount - k-1));
-            }
-        } else this.cachedOffset-= this.showCount;
-    }
+        this.previousGuardControl = 0;
+        while (!this.renderedSlice[++this.previousGuardControl].control);
 
-    private nextPage() {
-        ++this._currentPage;
-        this.cachedOffset+= this.showCount;
-        if (this.cached.length < this.cachedOffset+this.showCount*3) {
-            for (let k = 0; k < this.showCount; ++k) {
-                this.cached.push(this.make(this.firstIndex-1 +(this.currentPage+1)*this.showCount + k));
-            }
+        this.nextGuardControl = this.renderedCount;
+        if (this.cachedOffset + this.renderedCount === this.cached.length) {
+            const oldLength = this.cached.length;
+            this.loadToNextControl();
+            this.renderedCount+= this.cached.length-oldLength;
+        } else {
+            while (!this.cached[this.cachedOffset + ++this.renderedCount].control);
+            ++this.renderedCount;
         }
     }
     // }}}
 
-    // sub-page and scroll stuff {{{
-    private _inPage: number = 0;
-    get inPage(): number { return this._inPage; }
-    private set inPage(value: number) {
-        this._inPage = value;
-        if (this.inPage < -.75) {
-            this.previousPage();
-            this.inPage+= 1;
-        } else if (.75 < this.inPage) {
-            this.nextPage();
-            this.inPage-= 1;
-        }
+    // virtual scroll {{{
+    private _virtualScroll = 0;
+    get virtualScroll() { return this._virtualScroll; }
+    private set virtualScroll(value) {
+        const delta = value - this._virtualScroll;
+        this._virtualScroll = value;
 
-        this.el.scrollTop = this.currentScroll;
+        this.el.scrollTop+= delta;
+        const { top, bottom } = this.el.getBoundingClientRect();
+
+        const firstCtrlRect = this.el.children[this.previousGuardControl].getBoundingClientRect();
+        if (top <= firstCtrlRect.bottom) this.slideControlWindowPrevious();
+
+        const lastCtrlRect = this.el.children[this.nextGuardControl].getBoundingClientRect();
+        if (lastCtrlRect.top <= bottom) this.slideControlWindowNext();
     }
 
-    get currentScroll(): number { return (1+this.inPage) * this.pageSize; }
+    snapTo(control: number) {
+        const FPS = 30;
 
-    snapTo(nthPage: number) {
-        const fps = 60;
+        const { top } = this.el.getBoundingClientRect();
+        if (this.snapOffsetElm) control+= this.snapOffsetElm;
+        const targetRect = this.el.children[control].getBoundingClientRect();
+
+        let scrollToCover = targetRect.top - top;
+        if (this.snapOffsetPx) scrollToCover+= this.snapOffsetPx;
+
         // .25 is in seconds
-        const step = 1 / (fps * .25);
+        const stepSize = this.el.offsetHeight / (FPS * .5);
 
         const timer = setInterval(() => {
-            const diff = nthPage - (this.currentPage + this.inPage);
-            if (-step < diff && diff < step) {
+            if (-stepSize < scrollToCover && scrollToCover < stepSize) {
                 clearInterval(timer);
-                this.inPage = 0;
-            } else this.inPage+= diff < 0 ? -step : step;
-        }, 1000 / fps)
+                this.virtualScroll+= scrollToCover;
+            } else {
+                const thisStep = scrollToCover < 0 ? -stepSize : stepSize;
+                this.virtualScroll+= thisStep;
+                scrollToCover-= thisStep;
+            }
+        }, 1000 / FPS)
     }
     // }}}
 
-    // pointer events stuff {{{
+    // pointer events {{{
     private pointerLastY?: number;
 
     @HostListener('pointerdown', ['$event'])
@@ -137,16 +213,18 @@ export class SnapProcList<
         if (this.pointerLastY) {
             ev.preventDefault();
             ev.stopPropagation();
-            this.inPage-= (ev.y-this.pointerLastY) / this.pageSize;
+            this.virtualScroll-= ev.y - this.pointerLastY;
             this.pointerLastY = ev.y;
         }
     }
 
     @HostListener('window:pointerup', ['$event'])
     pointerup(ev: PointerEvent) {
-        ev.preventDefault();
+        // TODO maybe
+        //if (50 < ev.y - this.pointerLastY!)
+            ev.preventDefault();
         delete this.pointerLastY;
-        this.snapTo(this.currentPage);
+        this.snapTo(this.currentControl);
     }
     // }}}
 
