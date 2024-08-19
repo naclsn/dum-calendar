@@ -1,4 +1,4 @@
-import { Component, HostListener, Input, OnInit, Type, ElementRef, inject } from '@angular/core';
+import { Component, HostListener, Input, Output, OnInit, Type, ElementRef, inject, EventEmitter } from '@angular/core';
 import { NgComponentOutlet } from '@angular/common';
 
 type CacheItem<Ins> = {
@@ -35,8 +35,10 @@ export class SnapProcList<
     @Input({ required: true }) firstIndex!: number;
     @Input({ required: true }) nthInputs!: (index: number) => { control: boolean, promise: Promise<Ins> };
 
-    @Input() snapOffsetPx?: number;
-    @Input() snapOffsetElm?: number;
+    @Input() snapOffsetPx: number = 0;
+    @Input() snapOffsetElm: number = 0;
+
+    @Output() onVirtualScroll = new EventEmitter<{ visible: { inputs: Ins }[] }>;
 
     private el: HTMLElement = inject(ElementRef).nativeElement;
 
@@ -54,12 +56,14 @@ export class SnapProcList<
         this.cached.push(one);
         if (!one.control) this.loadToPreviousControl();
         this.loadToNextControl();
+        const lengthWhenCtrlOneIsZero = this.cached.length;
 
         // previous to guard, then previous to control again
         this.loadToPreviousControl();
         const lengthWhenPrevGuardIsZero = this.cached.length;
         this.loadToPreviousControl();
         this.previousGuardControl = this.cached.length - lengthWhenPrevGuardIsZero;
+        const ctrlOne = this.cached.length - lengthWhenCtrlOneIsZero + this.snapOffsetElm;
 
         // next to guard, then next to control again
         this.loadToNextControl();
@@ -67,7 +71,13 @@ export class SnapProcList<
         this.loadToNextControl();
 
         this.renderedCount = this.cached.length;
-        setTimeout(() => this.snapTo(this.currentControl));
+
+        setTimeout(() => {
+            const targetRect = this.el.children[ctrlOne].getBoundingClientRect();
+            let scrollToCover = targetRect.top - this.el.getBoundingClientRect().top;
+            scrollToCover+= this.snapOffsetPx;
+            this.virtualScroll = scrollToCover;
+        });
     }
 
     // page managment {{{
@@ -171,19 +181,28 @@ export class SnapProcList<
 
         const lastCtrlRect = this.el.children[this.nextGuardControl].getBoundingClientRect();
         if (lastCtrlRect.top <= bottom) this.slideControlWindowNext();
+
+        // TODO: debounce
+        setTimeout(() => {
+            const visible: { inputs: Ins }[] = [];
+            let k = this.previousGuardControl;
+            while (this.el.children[++k].getBoundingClientRect().bottom < top);
+            while (this.el.children[k].getBoundingClientRect().top < bottom)
+                visible.push(this.renderedSlice[k++] as any);
+            this.onVirtualScroll.emit({ visible });
+        });
     }
 
     snapTo(control: number) {
         const FPS = 30;
 
-        const { top } = this.el.getBoundingClientRect();
-        if (this.snapOffsetElm) control+= this.snapOffsetElm;
+        control+= this.snapOffsetElm;
         const targetRect = this.el.children[control].getBoundingClientRect();
 
-        let scrollToCover = targetRect.top - top;
-        if (this.snapOffsetPx) scrollToCover+= this.snapOffsetPx;
+        let scrollToCover = targetRect.top - this.el.getBoundingClientRect().top;
+        scrollToCover+= this.snapOffsetPx;
 
-        // .25 is in seconds
+        // *x is in seconds
         const stepSize = this.el.offsetHeight / (FPS * .5);
 
         const timer = setInterval(() => {
@@ -224,7 +243,13 @@ export class SnapProcList<
         //if (50 < ev.y - this.pointerLastY!)
             ev.preventDefault();
         delete this.pointerLastY;
-        this.snapTo(this.currentControl);
+
+
+        let firstVisibleControl = this.previousGuardControl;
+        const { top } = this.el.getBoundingClientRect();
+        while (this.el.children[++firstVisibleControl].getBoundingClientRect().bottom < top);
+        while (!this.renderedSlice[firstVisibleControl].control) ++firstVisibleControl;
+        this.snapTo(firstVisibleControl);
     }
     // }}}
 

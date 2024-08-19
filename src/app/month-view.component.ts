@@ -1,8 +1,5 @@
-// header ('wnum'), (days..)
-// content: 6x week
-//    week: (wnum), (lskdfjslkjf)
-
 import { Component, Input } from '@angular/core';
+import { CalendarService } from './calendar.service';
 import { SnapProcList } from './snap-proc-list.component';
 
 type DayInfo = {
@@ -10,6 +7,12 @@ type DayInfo = {
     monthId: string;
 };
 
+type Ins = {
+    weekNumber: number;
+    days: DayInfo[];
+};
+
+/// a <week /> is one row in the month view
 @Component({
     selector: 'week',
     standalone: true,
@@ -25,25 +28,12 @@ type DayInfo = {
             margin: 0px;
         }
 
-        .jan { --color: skyblue; }
-        .feb { --color: pink; }
-        .mar { --color: lime; }
-        .apr { --color: orange; }
-        .may { --color: gold; }
-        .jun { --color: cyan; }
-        .jul { --color: red; }
-        .aug { --color: yellow; }
-        .sep { --color: cornflowerblue; }
-        .oct { --color: purple; }
-        .nov { --color: green; }
-        .dec { --color: darkcyan; }
-
         span {
             display: inline-block;
             width: 3rem;
-            --height: 3rem;
+            height: var(--week-row-height);
             text-align: right;
-            color: var(--color);
+            color: var(--month-color);
         }
     `,
 })
@@ -54,22 +44,83 @@ export class WeekComponent {
 
 }
 
+/// the <months /> is the indicator of the months above the main view part
+@Component({
+    selector: 'months',
+    standalone: true,
+    template: `
+        @for (month of months; track $index) {
+            <span
+                [style]='"--ratio: "+month.ratio'
+                [class]=month.id
+            >
+                {{nameFor(month.id)}}
+            </span>
+        }
+    `,
+    styles: `
+        :host {
+            display: inline-block;
+            width: 100%;
+            --height: 2rem;
+            height: var(--height);
+        }
+
+        span {
+            display: inline-block;
+            height: 100%;
+
+            width: calc(100% * var(--ratio));
+
+            border-radius: calc(var(--height) / 2);
+            background-color: var(--month-color);
+
+            font-size: calc(3 / 5 * var(--height));
+            text-indent: calc(var(--height) / 2);
+            overflow: clip;
+        }
+
+        span:first-of-type {
+            border-top-left-radius: 0;
+            border-bottom-left-radius: 0;
+        }
+        span:last-of-type {
+            border-top-right-radius: 0;
+            border-bottom-right-radius: 0;
+        }
+    `,
+})
+export class MonthsComponent {
+
+    @Input() months: { id: string, ratio: number }[] = [];
+
+    nameFor(id: string): string {
+        return MonthViewComponent.MONTHS_BY_ID[id].name;
+    }
+
+}
+
 @Component({
     selector: 'month-view',
     standalone: true,
-    imports: [WeekComponent, SnapProcList],
+    imports: [WeekComponent, MonthsComponent, SnapProcList],
     template: `
-        <p>TODO: header (n, mon.tue.wed.thu.fri.sat.sun), year, months, data layer, styling</p>
+        <months [months]=visibleMonths />
         <snap-proc-list
             [component]=component
             [firstIndex]=firstIndex
             [nthInputs]=getWeek
-            [snapOffsetPx]='-23/2'
+            (onVirtualScroll)=visibleUpdated($event)
+            [snapOffsetPx]='23/2'
             [snapOffsetElm]=-1 />
     `,
     styles: `
+        :host {
+            --week-row-height: 2.5rem;
+        }
+
         snap-proc-list {
-            height: calc(23px * 8);
+            height: calc(var(--week-row-height) * 7);
         }
     `,
 })
@@ -81,24 +132,36 @@ export class MonthViewComponent {
         return weeksSinceZero;
     }
 
-    static MONTHS = [
-        { days: 31, id: 'jan', name: 'January',   },
-        { days: 28, id: 'feb', name: 'February',  },
-        { days: 31, id: 'mar', name: 'March',     },
-        { days: 30, id: 'apr', name: 'April',     },
-        { days: 31, id: 'may', name: 'May',       },
-        { days: 30, id: 'jun', name: 'June',      },
-        { days: 31, id: 'jul', name: 'July',      },
-        { days: 31, id: 'aug', name: 'August',    },
-        { days: 30, id: 'sep', name: 'September', },
-        { days: 31, id: 'oct', name: 'October',   },
-        { days: 30, id: 'nov', name: 'November',  },
-        { days: 31, id: 'dec', name: 'December',  },
-    ];
+    constructor(calendar: CalendarService) {
+        calendar.showDayRequest$.subscribe(n => console.warn({n}));
+    }
+
+    visibleMonths: { id: string, ratio: number }[] = [];
+
+    static MONTHS = (() => {
+        const r: { days: number, id: string, name: string }[] = [
+            { days: 31, id: 'jan' },
+            { days: 28, id: 'feb' },
+            { days: 31, id: 'mar' },
+            { days: 30, id: 'apr' },
+            { days: 31, id: 'may' },
+            { days: 30, id: 'jun' },
+            { days: 31, id: 'jul' },
+            { days: 31, id: 'aug' },
+            { days: 30, id: 'sep' },
+            { days: 31, id: 'oct' },
+            { days: 30, id: 'nov' },
+            { days: 31, id: 'dec' },
+        ] as any;
+        const format = new Intl.DateTimeFormat(undefined, { month: 'long' });
+        for (const [k, it] of r.entries()) it.name = format.format(new Date(0, k));
+        return r;
+    })();
+    static MONTHS_BY_ID = Object.fromEntries(MonthViewComponent.MONTHS.map(it => [it.id, it]));
     static MS_IN_DAY = 86400000;
     static MS_IN_WEEK = MonthViewComponent.MS_IN_DAY*7;
 
-    getWeek(weekInTime: number) {
+    getWeek(weekInTime: number): { control: boolean; promise: Promise<Ins>; } {
         // rem: -3 days is because date(0) is a thursday
         const monday = new Date(weekInTime * MonthViewComponent.MS_IN_WEEK - 3*MonthViewComponent.MS_IN_DAY);
         const yearInTime = monday.getFullYear();
@@ -134,6 +197,22 @@ export class MonthViewComponent {
                 days,
             }),
         };
+    }
+
+    visibleUpdated({ visible }: { visible: { inputs: Ins }[] }) {
+        const visibleMonthDayCount = new Map<string, number>;
+        for (const { inputs } of visible) {
+            for (const { monthId } of inputs.days) {
+                const count = visibleMonthDayCount.get(monthId) ?? 0;
+                visibleMonthDayCount.set(monthId, count+1);
+            }
+        }
+
+        this.visibleMonths.length = 0;
+        const totalNumDays = 7*visible.length;
+        for (const [id, count] of visibleMonthDayCount.entries()) {
+            this.visibleMonths.push({ id, ratio: count/totalNumDays });
+        }
     }
 
 }

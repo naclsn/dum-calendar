@@ -1,30 +1,30 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
+import { CalendarService } from './calendar.service';
+import { TopBarComponent } from './top-bar.component';
 import { MonthViewComponent } from './month-view.component';
 
 @Component({
     selector: 'app-root',
     standalone: true,
-    imports: [MonthViewComponent],
+    imports: [TopBarComponent, MonthViewComponent],
     template: `
-        <h1>hewwo</h1>
-        <month-view></month-view>
+        <top-bar (click)=today() />
+        <div>
+            <month-view />
+        </div>
     `,
     styles: `
         :host {
           --content-padding: 10px;
         }
-
-        header {
-          display: block;
-          height: 60px;
-          padding: var(--content-padding);
-        }
-
-        .content {
-          padding: var(--content-padding);
-        }
     `,
 })
 export class AppComponent {
+
+    private calendar = inject(CalendarService);
+
+    today() {
+        this.calendar.showDayRequest(new Date);
+    }
 
 }
