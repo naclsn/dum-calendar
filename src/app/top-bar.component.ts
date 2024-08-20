@@ -40,9 +40,11 @@ import { Component } from '@angular/core';
     `,
 })
 export class TopBarComponent {
+
     get dayNow(): string {
         const today = new Date();
         const fmt = new Intl.DateTimeFormat(undefined, { weekday: 'long', day: 'numeric' });
         return fmt.format(today);
     }
+
 }

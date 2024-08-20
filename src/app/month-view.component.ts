@@ -1,4 +1,5 @@
-import { Component, Input } from '@angular/core';
+import { Component, Pipe, Input, inject, PipeTransform } from '@angular/core';
+import { AsyncPipe } from '@angular/common';
 import { CalendarService } from './calendar.service';
 import { SnapProcList } from './snap-proc-list.component';
 
@@ -12,7 +13,7 @@ type Ins = {
     days: DayInfo[];
 };
 
-/// a <week /> is one row in the month view
+/// a <week /> is one row in the month view {{{
 @Component({
     selector: 'week',
     standalone: true,
@@ -20,7 +21,10 @@ type Ins = {
     template: `
         <span>{{weekNumber}}</span>
         @for (day of days; track $index) {
-            <span [class]=day.monthId>{{day.number}}</span>
+            <span
+                [class]=day.monthId
+                (pointerup)='theNth($event,day.monthId, day.number)'
+            >{{day.number}}</span>
         }
     `,
     styles: `
@@ -42,9 +46,22 @@ export class WeekComponent {
     @Input() weekNumber!: number;
     @Input() days!: DayInfo[];
 
-}
+    private calendar = inject(CalendarService);
 
-/// the <months /> is the indicator of the months above the main view part
+    theNth(ev: PointerEvent, id: string, nth: number) {
+        console.log("coucou");
+        if (ev.defaultPrevented) return;
+        this.calendar.showDayRequest(new Date(
+            (new Date).getFullYear(),
+            MonthViewComponent.MONTHS_BY_ID[id].index,
+            nth
+        ));
+    }
+
+}
+// }}}
+
+/// the <months /> is the indicator of the months above the main view part {{{
 @Component({
     selector: 'months',
     standalone: true,
@@ -53,6 +70,7 @@ export class WeekComponent {
             <span
                 [style]='"--ratio: "+month.ratio'
                 [class]=month.id
+                (click)=theFirst(month.id)
             >
                 {{nameFor(month.id)}}
             </span>
@@ -98,18 +116,46 @@ export class MonthsComponent {
         return MonthViewComponent.MONTHS_BY_ID[id].name;
     }
 
+    private calendar = inject(CalendarService);
+
+    theFirst(id: string) {
+        this.calendar.showDayRequest(new Date(
+            (new Date).getFullYear(),
+            MonthViewComponent.MONTHS_BY_ID[id].index,
+        ));
+    }
+
+}
+// }}}
+
+/// Date -> week index (Date(0) is week 0)
+@Pipe({
+    name: 'weekIndex',
+    standalone: true,
+})
+export class WeekIndexPipe implements PipeTransform {
+
+    transform(date: Date | null): number | null {
+        if (!date) return null;
+        const withThuOffset = date.getTime() - 3*MonthViewComponent.MS_IN_DAY;
+        const weeksSinceZero = (withThuOffset / MonthViewComponent.MS_IN_WEEK) |0;
+        return weeksSinceZero+1;
+    }
+
 }
 
+/// the main component of this file {{{
 @Component({
     selector: 'month-view',
     standalone: true,
-    imports: [WeekComponent, MonthsComponent, SnapProcList],
+    imports: [WeekComponent, MonthsComponent, SnapProcList, AsyncPipe, WeekIndexPipe],
     template: `
         <months [months]=visibleMonths />
         <snap-proc-list
             [component]=component
             [firstIndex]=firstIndex
             [nthInputs]=getWeek
+            [snapToClosestNow]="showRequest$ | async | weekIndex"
             (onVirtualScroll)=visibleUpdated($event)
             [snapOffsetPx]='23/2'
             [snapOffsetElm]=-1 />
@@ -128,18 +174,17 @@ export class MonthViewComponent {
 
     component = WeekComponent;
     get firstIndex() {
-        const weeksSinceZero = (Date.now() / MonthViewComponent.MS_IN_WEEK) |0;
-        return weeksSinceZero;
+        const withThuOffset = Date.now() - 3*MonthViewComponent.MS_IN_DAY;
+        const weeksSinceZero = (withThuOffset / MonthViewComponent.MS_IN_WEEK) |0;
+        return weeksSinceZero+1;
     }
 
-    constructor(calendar: CalendarService) {
-        calendar.showDayRequest$.subscribe(n => console.warn({n}));
-    }
+    showRequest$ = inject(CalendarService).showDayRequest$;
 
     visibleMonths: { id: string, ratio: number }[] = [];
 
     static MONTHS = (() => {
-        const r: { days: number, id: string, name: string }[] = [
+        const r: { days: number, id: string, name: string, index: number }[] = [
             { days: 31, id: 'jan' },
             { days: 28, id: 'feb' },
             { days: 31, id: 'mar' },
@@ -154,7 +199,10 @@ export class MonthViewComponent {
             { days: 31, id: 'dec' },
         ] as any;
         const format = new Intl.DateTimeFormat(undefined, { month: 'long' });
-        for (const [k, it] of r.entries()) it.name = format.format(new Date(0, k));
+        for (const [k, it] of r.entries()) {
+            it.name = format.format(new Date(0, k));
+            it.index = k;
+        }
         return r;
     })();
     static MONTHS_BY_ID = Object.fromEntries(MonthViewComponent.MONTHS.map(it => [it.id, it]));
@@ -216,3 +264,4 @@ export class MonthViewComponent {
     }
 
 }
+// }}}

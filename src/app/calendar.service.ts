@@ -6,11 +6,15 @@ import { Subject } from 'rxjs';
 })
 export class CalendarService {
 
-    private showDay = new Subject<Date>;
+    private showDay = new Subject<Date | null>;
     showDayRequest$ = this.showDay.asObservable();
 
-    showDayRequest(n: Date) {
-        this.showDay.next(n);
+    constructor() {
+        setTimeout(() => this.showDayRequest(new Date));
+    }
+
+    showDayRequest(d: Date) {
+        this.showDay.next(d);
     }
 
 }

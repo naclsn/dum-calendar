@@ -2,20 +2,27 @@ import { Component, inject } from '@angular/core';
 import { CalendarService } from './calendar.service';
 import { TopBarComponent } from './top-bar.component';
 import { MonthViewComponent } from './month-view.component';
+import { AgendayComponent } from './agenday.component';
 
 @Component({
     selector: 'app-root',
     standalone: true,
-    imports: [TopBarComponent, MonthViewComponent],
+    imports: [TopBarComponent, MonthViewComponent, AgendayComponent],
     template: `
         <top-bar (click)=today() />
-        <div>
-            <month-view />
-        </div>
+        <month-view />
+        <agenday />
     `,
     styles: `
         :host {
-          --content-padding: 10px;
+            position: absolute;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        agenday {
+            flex-grow: 1;
         }
     `,
 })
