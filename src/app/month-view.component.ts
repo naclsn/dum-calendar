@@ -1,6 +1,6 @@
-import { Component, Pipe, Input, inject, PipeTransform } from '@angular/core';
+import { Component, Pipe, Input, OnChanges, inject, PipeTransform, SimpleChanges } from '@angular/core';
 import { AsyncPipe } from '@angular/common';
-import { CalendarService } from './calendar.service';
+import { CalendarService, FilterAccuPipe } from './calendar.service';
 import { SnapProcList } from './snap-proc-list.component';
 
 type DayInfo = {
@@ -23,7 +23,7 @@ type Ins = {
         @for (day of days; track $index) {
             <span
                 [class]=day.monthId
-                (pointerup)='theNth($event,day.monthId, day.number)'
+                (pointerup)='theNth(day.monthId, day.number)'
             >{{day.number}}</span>
         }
     `,
@@ -48,9 +48,7 @@ export class WeekComponent {
 
     private calendar = inject(CalendarService);
 
-    theNth(ev: PointerEvent, id: string, nth: number) {
-        console.log("coucou");
-        if (ev.defaultPrevented) return;
+    theNth(id: string, nth: number) {
         this.calendar.showDayRequest(new Date(
             (new Date).getFullYear(),
             MonthViewComponent.MONTHS_BY_ID[id].index,
@@ -65,6 +63,7 @@ export class WeekComponent {
 @Component({
     selector: 'months',
     standalone: true,
+    imports: [AsyncPipe, FilterAccuPipe],
     template: `
         @for (month of months; track $index) {
             <span
@@ -76,6 +75,7 @@ export class WeekComponent {
             </span>
         }
     `,
+                //({{(calendar.userNoteEdit$ | async | filterAccu:timeSt(month.id):timeEd(month.id)).length}})
     styles: `
         :host {
             display: inline-block;
@@ -108,15 +108,39 @@ export class WeekComponent {
         }
     `,
 })
-export class MonthsComponent {
+export class MonthsComponent implements OnChanges {
 
     @Input() months: { id: string, ratio: number }[] = [];
+    private hasIds = new Set<string>;
+
+    calendar = inject(CalendarService);
+
+    timeSt(id: string): number {
+        return new Date(
+            (new Date).getFullYear(),
+            MonthViewComponent.MONTHS_BY_ID[id].index,
+        ).getTime();
+    }
+
+    timeEd(id: string): number {
+        return new Date(
+            (new Date).getFullYear(),
+            (MonthViewComponent.MONTHS_BY_ID[id].index+1)%12,
+        ).getTime();
+    }
+
+    ngOnChanges(changes: SimpleChanges): void {
+        if ('months' in changes) {
+            for (let month of this.months) if (!this.hasIds.has(month.id)) {
+                this.hasIds.add(month.id);
+                this.calendar.retrieveUserNotes(this.timeSt(month.id), this.timeEd(month.id));
+            }
+        }
+    }
 
     nameFor(id: string): string {
         return MonthViewComponent.MONTHS_BY_ID[id].name;
     }
-
-    private calendar = inject(CalendarService);
 
     theFirst(id: string) {
         this.calendar.showDayRequest(new Date(
@@ -156,7 +180,7 @@ export class WeekIndexPipe implements PipeTransform {
             [firstIndex]=firstIndex
             [nthInputs]=getWeek
             [snapToClosestNow]="showRequest$ | async | weekIndex"
-            (onVirtualScroll)=visibleUpdated($event)
+            (onVirtualScroll)='visibleUpdated($event)'
             [snapOffsetPx]='23/2'
             [snapOffsetElm]=-1 />
     `,

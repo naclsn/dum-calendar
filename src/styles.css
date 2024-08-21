@@ -17,10 +17,10 @@ body {
 .feb { --month-color: pink; }
 .mar { --month-color: lime; }
 .apr { --month-color: orange; }
-.may { --month-color: gold; }
+.may { --month-color: goldenrod; }
 .jun { --month-color: cyan; }
 .jul { --month-color: red; }
-.aug { --month-color: yellow; }
+.aug { --month-color: gold; }
 .sep { --month-color: cornflowerblue; }
 .oct { --month-color: purple; }
 .nov { --month-color: green; }

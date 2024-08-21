@@ -1,4 +1,5 @@
 import { Component, inject } from '@angular/core';
+import { AsyncPipe } from '@angular/common';
 import { CalendarService } from './calendar.service';
 import { TopBarComponent } from './top-bar.component';
 import { MonthViewComponent } from './month-view.component';
@@ -7,11 +8,11 @@ import { AgendayComponent } from './agenday.component';
 @Component({
     selector: 'app-root',
     standalone: true,
-    imports: [TopBarComponent, MonthViewComponent, AgendayComponent],
+    imports: [TopBarComponent, MonthViewComponent, AgendayComponent, AsyncPipe],
     template: `
         <top-bar (click)=today() />
         <month-view />
-        <agenday />
+        <agenday [day]='calendar.showDayRequest$ | async'/>
     `,
     styles: `
         :host {
@@ -28,7 +29,7 @@ import { AgendayComponent } from './agenday.component';
 })
 export class AppComponent {
 
-    private calendar = inject(CalendarService);
+    calendar = inject(CalendarService);
 
     today() {
         this.calendar.showDayRequest(new Date);
