@@ -34,7 +34,7 @@ type Ins = {
 
         span {
             display: inline-block;
-            width: 3rem;
+            width: 11vh;
             height: var(--week-row-height);
             text-align: right;
             color: var(--month-color);

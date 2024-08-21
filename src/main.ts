@@ -8,6 +8,6 @@ import localeFr from '@angular/common/locales/fr';
 registerLocaleData(localeFr);
 
 bootstrapApplication(AppComponent, { providers: [
-    provideServiceWorker('ngsw-worker.js', { enabled: !isDevMode() }),
+    provideServiceWorker('ngsw-worker.js', /*{ enabled: !isDevMode() }*/),
     //{ provide: LOCALE_ID, useValue: 'fr' },
 ] }).catch((err) => console.error(err));
