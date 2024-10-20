@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+
+        <script src="script.js"></script>
+
+        <style>
+            body {
+                margin: 0;
+                padding: 0;
+                height: 100vh;
+                display: flex;
+                flex-direction: column;
+            }
+            #scroll-and-today {
+                flex-grow: 1;
+                display: flex;
+            }
+            @media (orientation: portrait) {
+                #scroll-and-today {
+                    flex-direction: column;
+                }
+            }
+
+            .jan { --month-bg: skyblue; }
+            .feb { --month-bg: pink; }
+            .mar { --month-bg: lime; }
+            .apr { --month-bg: orange; }
+            .may { --month-bg: goldenrod; }
+            .jun { --month-bg: cyan; }
+            .jul { --month-bg: red; }
+            .aug { --month-bg: gold; }
+            .sep { --month-bg: cornflowerblue; }
+            .oct { --month-bg: purple; }
+            .nov { --month-bg: green; }
+            .dec { --month-bg: darkcyan; }
+        </style>
+
+        <template id='cal-week'>
+            <style>
+                :host {
+                    display: block;
+                }
+                #num {
+                    display: inline-block;
+                    width: 12.5%;
+                }
+                #days > div {
+                    display: inline-block;
+                    text-align: right;
+                    width: 12.5%;
+                    background-color: var(--month-bg);
+                }
+                @media (orientation: portrait) {
+                    #days > div {
+                        height: 3rem;
+                    }
+                }
+                @media (orientation: landscape) {
+                    :host {
+                        width: 32rem;
+                    }
+                    #days > div {
+                        height: calc((100vh - 4rem) / 8.3);
+                    }
+                }
+            </style>
+            <div id="num">
+            </div><span id="days"><div class="mon">
+                            </div><div class="tue">
+                            </div><div class="wed">
+                            </div><div class="thu">
+                            </div><div class="fri">
+                            </div><div class="sat">
+                            </div><div class="sun">
+                            </div></span>
+        </template>
+
+        <template id="cal-months-bar">
+            <style>
+                #months > div {
+                    display: inline-block;
+                    height: 4rem;
+                    background-color: var(--month-bg);
+                    overflow-x: hidden;
+                }
+            </style>
+            <div id="months"></div>
+        </template>
+
+        <style>
+            cal-scroll-view {
+                overflow-y: hidden;
+                display: block;
+                transition: height .25s;
+            }
+            @media (orientation: landscape) {
+                cal-scroll-view {
+                    width: fit-content;
+                }
+            }
+        </style>
+
+        <template id="cal-today-notes">
+            <style>
+                :host {
+                    flex-grow: 1;
+
+                    --paper-like: #f9f5d5;
+                    --ink-like: #a0a8b5;
+
+                    background: repeating-linear-gradient(0deg,
+                        var(--ink-like), var(--ink-like) 0px,
+                        var(--paper-like) 3px, var(--paper-like) 2rem);
+                }
+            </style>
+            <h1 id="title"></h1>
+            <ul id="list"></ul>
+        </template>
+    </head>
+
+    <body>
+        <cal-months-bar id="monthsBar"></cal-months-bar>
+        <div id="scroll-and-today">
+            <cal-scroll-view id="scrollView"></cal-scroll-view>
+            <cal-today-notes id="todayNotes"></cal-today-notes>
+        </div>
+    </body>
+</html>
