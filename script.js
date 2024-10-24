@@ -1,4 +1,6 @@
 /*-*/; (onload = function() {
+    // 'lib' {{{
+
     /**
      * @param {C} cls
      * @template {new() => HTMLElement} C
@@ -38,10 +40,16 @@
         return r;
     }
 
-    document.head.appendChild(elem('title', {}, (new Date).toLocaleDateString()));
+    // }}}
+
+    // static consts {{{
+
+    const NOW = new Date
+    const TODAY = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate());
     /** @var {InstanceType<CalMonthsBar>} monthsBar */
     /** @var {InstanceType<CalScrollView>} scrollView */
     /** @var {InstanceType<CalTodayNotes>} todayNotes */
+    /** @event {Date | number} daychanged */
 
     /** @type {{days: number, id: string, name: string}[]} */
     const MONTHS = [
@@ -62,28 +70,57 @@
         MONTHS[k].name = new Date(0, k).toLocaleString(undefined, { month: 'long' });
         MONTHS[MONTHS[k].id] = k;
     }
-    const VISIBLE_WEEKS_COUNT = 8;
-    const MIN_SCROLL_DIST = 30; // px
+
+    // }}}
+
+    // elements {{{
 
     custom('cal-week', class extends HTMLElement {
         /** @type {HTMLSpanElement} */ days;
         /** @type {HTMLDivElement} */ num;
 
+        /** @type {HTMLDivElement?} */ selected = null;
+
         connectedCallback() {
+            if (this.selected) {
+                this.selected.id = '';
+                this.selected = null;
+            }
+
             const monday = new Date(+this.dataset.monday);
 
             for (const day of this.days.children) {
-                const date = monday.getDate();
-                day.textContent = date;
+                day.textContent = monday.getDate();
                 day.className = MONTHS[monday.getMonth()].id;
-                day.onpointerup = _ => todayNotes.dataset.day = new Date(+this.dataset.monday).setDate(date);
+
+                const timestamp = +monday;
+                if (todayNotes.dataset.day == timestamp) {
+                    this.selected = day;
+                    this.selected.id = 'selected-day';
+                }
+                day.onclick = _ => dispatchEvent(new CustomEvent('daychanged', { detail: timestamp }));
+
                 monday.setDate(monday.getDate() + 1);
             }
+
+            addEventListener('daychanged', ev => this.dayChanged(new Date(ev.detail)));
 
             monday.setDate(monday.getDate() - 3); // make it Thursday
             const first = new Date(monday.getFullYear(), 0);
             const weekNum = Math.ceil((((monday - first) / 86400000) + 1) / 7);
             this.num.textContent = weekNum;
+        }
+
+        /** @param {Date} day */
+        dayChanged(day) {
+            if (this.selected) this.selected.id = '';
+
+            const monday = +this.dataset.monday;
+            if (monday <= day && day < monday + 604800000) {
+                const n = day.getDay() - 1; // -1 -> sun, 0 -> mon, ..
+                this.selected = this.days.children[n < 0 ? 6 : n];
+                this.selected.id = 'selected-day';
+            }
         }
 
         visibleDaysRatios() {
@@ -97,8 +134,7 @@
 
             if (0 < visible) {
                 const ratio = visible / b.height;
-                for (const day of this.days.children)
-                    map.set(day.className, (map.get(day.className) || 0) + ratio);
+                for (const day of this.days.children) map.set(day.className, (map.get(day.className) || 0) + ratio);
             }
 
             return map;
@@ -108,19 +144,19 @@
     custom('cal-months-bar', class extends HTMLElement {
         /** @type {HTMLDivElement} */ months;
 
-        /** @param {Map<string, number>} map */
+        /** @param {Map<string, [count: number, year: number]>} map */
         updateVisibleMonths(map) {
-            const total = VISIBLE_WEEKS_COUNT * 7;
-            const months = this.months;
+            if (!map.size) return;
+            const total = Array.from(map.values()).reduce((acc, [cur, _]) => acc + cur, 0);
             let k = 0;
-            for (const [id, nb] of map) {
+            for (const [id, [nb, yr]] of map) {
                 /** @type {HTMLElement} */
-                const month = months.children[k++] || months.appendChild(elem('div'));
+                const month = this.months.children[k++] || this.months.appendChild(elem('div'));
                 month.className = id;
                 month.style.width = nb / total * 100 + '%';
-                month.textContent = MONTHS[MONTHS[id]].name;
+                month.textContent = MONTHS[MONTHS[id]].name + ' (' + yr + ')';
             }
-            while (k < months.children.length) months.removeChild(months.lastElementChild);
+            while (k < this.months.children.length) this.months.removeChild(this.months.lastElementChild);
         }
     });
 
@@ -133,102 +169,98 @@
             const today = new Date;
             const first = new Date(today.getFullYear(), today.getMonth());
             const sinceMonday = first.getDay() - 1;
-            first.setDate(first.getDate() - (sinceMonday < 0 ? 6 : sinceMonday) - VISIBLE_WEEKS_COUNT * 7);
+            first.setDate(first.getDate() - (sinceMonday < 0 ? 6 : sinceMonday));
 
-            this.scrollTop = 0;
-            for (let k = 0; k < VISIBLE_WEEKS_COUNT * 3; ++k) {
-                this.appendChild(elem('cal-week', { 'data-monday': +first }));
+            const before = new Date(first).setDate(first.getDate() - 7);
+
+            this.style.height = this.clientHeight + 'px';
+            for (let total = 0; total < this.clientHeight && this.childElementCount < 99;) {
+                total += this.appendChild(elem('cal-week', { 'data-monday': +first })).clientHeight;
                 first.setDate(first.getDate() + 7);
             }
 
-            addEventListener('resize', _ => this.style.height = this.firstElementChild.clientHeight * VISIBLE_WEEKS_COUNT + 'px');
-            setTimeout(() => {
-                this.style.height = this.firstElementChild.clientHeight * VISIBLE_WEEKS_COUNT + 'px';
-                const a = this.children[VISIBLE_WEEKS_COUNT - 1].getBoundingClientRect();
-                const b = this.getBoundingClientRect();
-                this.virtualScrollBy(this.scrollTop - (a.top - b.top));
-            });
+            this.appendChild(elem('cal-week', { 'data-monday': +first }));
+            first.setDate(first.getDate() + 7);
+            this.appendChild(elem('cal-week', { 'data-monday': +first }));
+            this.scrollTop = this.insertBefore(elem('cal-week', { 'data-monday': before }), this.firstElementChild).clientHeight;
+            this.onscroll = this.virtualScroll.bind(this);
 
-            this.onpointerdown = ev => {
-                ev.preventDefault();
-                this.pointerInitialY = this.pointerLastY = ev.y;
-                this.pointerMovedEnough = false;
-            };
-
-            addEventListener('pointermove', ev => {
-                if (this.pointerLastY) {
-                    ev.preventDefault();
-                    ev.stopPropagation();
-                    this.virtualScrollBy(ev.y - this.pointerLastY);
-                    this.pointerLastY = ev.y;
-                    if (MIN_SCROLL_DIST < Math.abs(ev.y - this.pointerInitialY)) this.pointerMovedEnough = true;
-                }
-            });
-
-            addEventListener('pointerup', ev => {
-                if (this.pointerLastY) {
-                    if (this.pointerMovedEnough) {
-                        ev.preventDefault();
-                        ev.stopPropagation();
-                    }
-                    delete this.pointerLastY;
-                }
-            }, true);
-
-            this.onwheel = ev => this.virtualScrollBy(-ev.deltaY / 2);
+            // TODO
+            //addEventListener('resize', _ => {
+            //    this.style.height = '';
+            //    setTimeout(_ => this.style.height = this.clientHeight + 'px');
+            //});
         }
 
-        virtualScrollBy(dy) {
-            let should = this.scrollTop - dy;
-
-            while (should < 0) {
+        virtualScroll() {
+            if (this.scrollTop < this.firstElementChild.clientHeight) {
                 const prevFirst = this.firstElementChild;
                 const newFirst = this.lastElementChild;
 
                 const monday = new Date(+prevFirst.dataset.monday);
                 newFirst.dataset.monday = monday.setDate(monday.getDate() - 7);
 
-                this.insertBefore(newFirst, prevFirst);
-                should += newFirst.clientHeight;
+                this.scrollTop += this.insertBefore(newFirst, prevFirst).clientHeight;
             }
 
-            while (this.clientHeight < should) {
+            else if (this.scrollHeight - this.lastElementChild.clientHeight < this.scrollTop + this.clientHeight) {
                 const prevLast = this.lastElementChild;
                 const newLast = this.firstElementChild;
 
                 const monday = new Date(+prevLast.dataset.monday);
                 newLast.dataset.monday = monday.setDate(monday.getDate() + 7);
 
-                this.appendChild(newLast);
-                should -= newLast.clientHeight;
+                this.scrollTop -= this.appendChild(newLast).clientHeight;
             }
 
-            this.scrollTop = should;
-
+            /** @type {Map<string, [count: number, year: number]>} */
             const overMonth = new Map;
             for (const week of this.children) {
                 /** @type {Map<string, number>} */
                 const overWeek = week.visibleDaysRatios(); // rem: total of 7, not 1
-                for (const [id, nb] of overWeek) overMonth.set(id, (overMonth.get(id) || 0) + nb);
-            }
+                if (!overWeek.size) continue;
 
+                const year = new Date(+week.dataset.monday).getFullYear();
+                // week has at most 2 months ids, the loop is unrolled manually
+                const it = overWeek.entries();
+
+                const [id, nb] = it.next().value;
+                if (!overMonth.has(id)) overMonth.set(id, [0, year]);
+                overMonth.get(id)[0] += nb;
+
+                const again = it.next().value;
+                if (again) {
+                    const [id, nb] = again;
+                    // month check handles December -> Januray
+                    if (!overMonth.has(id)) overMonth.set(id, [0, MONTHS[id] ? year : year + 1]);
+                    overMonth.get(id)[0] += nb;
+                }
+            }
             monthsBar.updateVisibleMonths(overMonth);
         }
     });
 
     custom('cal-today-notes', class extends HTMLElement {
-        static observedAttributes = ['data-day'];
-
         /** @type {HTMLHeadingElement} */ title;
         /** @type {HTMLUListElement} */ list;
 
         connectedCallback() {
-            this.attributeChangedCallback();
+            addEventListener('daychanged', ev => this.dayChanged(new Date(ev.detail)));
         }
 
-        attributeChangedCallback() {
-            const day = new Date(+this.dataset.day || Date.now());
+        /** @param {Date} day */
+        dayChanged(day) {
+            this.dataset.day = +day;
             this.title.textContent = day.toLocaleDateString(undefined, { dateStyle: 'full' });
         }
     });
+
+    // }}}
+
+    // init {{{
+
+    document.head.appendChild(elem('title', {}, TODAY.toLocaleDateString()));
+    dispatchEvent(new CustomEvent('daychanged', { detail: TODAY }));
+
+    // }}}
 });
