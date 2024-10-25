@@ -202,7 +202,7 @@
         }
 
         virtualScroll() {
-            const times = this.childElementCount / 3;
+            const times = this.childElementCount / 5;
 
             while (this.scrollTop < this.firstElementChild.clientHeight * times) {
                 const prevFirst = this.firstElementChild;
