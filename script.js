@@ -171,7 +171,8 @@
             const sinceMonday = first.getDay() - 1;
             first.setDate(first.getDate() - (sinceMonday < 0 ? 6 : sinceMonday));
 
-            const before = new Date(first).setDate(first.getDate() - 7);
+            const before = new Date(first);
+            before.setDate(before.getDate() - 7);
 
             this.style.height = this.clientHeight + 'px';
             for (let total = 0; total < this.clientHeight && this.childElementCount < 99;) {
@@ -179,10 +180,18 @@
                 first.setDate(first.getDate() + 7);
             }
 
-            this.appendChild(elem('cal-week', { 'data-monday': +first }));
-            first.setDate(first.getDate() + 7);
-            this.appendChild(elem('cal-week', { 'data-monday': +first }));
-            this.scrollTop = this.insertBefore(elem('cal-week', { 'data-monday': before }), this.firstElementChild).clientHeight;
+            // triple: add one batch before and one after
+            const n = this.childElementCount;
+            let scroll = 0;
+            for (let k = 0; k < n; ++k) {
+                this.appendChild(elem('cal-week', { 'data-monday': +first }));
+                first.setDate(first.getDate() + 7);
+
+                scroll += this.insertBefore(elem('cal-week', { 'data-monday': +before }), this.firstElementChild).clientHeight;
+                before.setDate(before.getDate() - 7);
+            }
+
+            this.scrollTop = scroll;
             this.onscroll = this.virtualScroll.bind(this);
 
             // TODO
@@ -193,7 +202,9 @@
         }
 
         virtualScroll() {
-            if (this.scrollTop < this.firstElementChild.clientHeight) {
+            const times = this.childElementCount / 3;
+
+            while (this.scrollTop < this.firstElementChild.clientHeight * times) {
                 const prevFirst = this.firstElementChild;
                 const newFirst = this.lastElementChild;
 
@@ -203,7 +214,7 @@
                 this.scrollTop += this.insertBefore(newFirst, prevFirst).clientHeight;
             }
 
-            else if (this.scrollHeight - this.lastElementChild.clientHeight < this.scrollTop + this.clientHeight) {
+            while (this.scrollHeight - this.lastElementChild.clientHeight * times < this.scrollTop + this.clientHeight) {
                 const prevLast = this.lastElementChild;
                 const newLast = this.firstElementChild;
 
