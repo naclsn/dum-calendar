@@ -1,6 +1,5 @@
-/*-*/; (onload = function() {
-    // 'lib' {{{
-
+/*-*/; (onload = function() { 'use strict';
+    // lib {{{
     /**
      * @param {C} cls
      * @template {new() => HTMLElement} C
@@ -39,11 +38,9 @@
         if (content) r.innerHTML = content;
         return r;
     }
-
     // }}}
 
-    // static consts {{{
-
+    // consts {{{
     const NOW = new Date
     const TODAY = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate());
     /** @var {InstanceType<CalMonthsBar>} monthsBar */
@@ -70,11 +67,34 @@
         MONTHS[k].name = new Date(0, k).toLocaleString(undefined, { month: 'long' });
         MONTHS[MONTHS[k].id] = k;
     }
+    // }}}
 
+    // db {{{
+    class CalEvent {
+        static objectStoreOptions = { autoIncrement: true };
+        static objectStoreIndexes = { day: { keyPath: 'day' } };
+
+        note = '';
+        day = TODAY;
+        /** @type {Date?} */ begins;
+        /** @type {Date?} */ ends;
+
+        repeats = false;
+        lingers = false;
+
+        constructor(from) {
+            if (from) Object.assign(this, from);
+        }
+    }
+
+    class CalAdjust {
+        static objectStoreOptions = { autoIncrement: true };
+    }
+
+    const db = database('dum-calendar', { CalEvent, CalAdjust });
     // }}}
 
     // elements {{{
-
     custom('cal-week', class extends HTMLElement {
         /** @type {HTMLSpanElement} */ days;
         /** @type {HTMLDivElement} */ num;
@@ -202,7 +222,7 @@
         }
 
         virtualScroll() {
-            const times = this.childElementCount / 5;
+            const times = this.childElementCount / 4;
 
             while (this.scrollTop < this.firstElementChild.clientHeight * times) {
                 const prevFirst = this.firstElementChild;
@@ -263,15 +283,14 @@
         dayChanged(day) {
             this.dataset.day = +day;
             this.title.textContent = day.toLocaleDateString(undefined, { dateStyle: 'full' });
+
+            //const events = await db.transaction(CalEvent).index('day').get(..);
         }
     });
-
     // }}}
 
     // init {{{
-
     document.head.appendChild(elem('title', {}, TODAY.toLocaleDateString()));
     dispatchEvent(new CustomEvent('daychanged', { detail: TODAY }));
-
     // }}}
 });
