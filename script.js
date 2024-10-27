@@ -87,9 +87,9 @@
         static objectStoreIndexes = { day: { keyPath: 'day' } };
 
         note = '';
-        day = TODAY;
-        /** @type {Date?} */ begins;
-        /** @type {Date?} */ ends;
+        day = +TODAY;
+        /** @type {number?} */ begins = null;
+        /** @type {number?} */ ends = null;
 
         /** @type {number | 'monthly' | 'yearly'} */ interval = 0;
         skips = 0;
@@ -299,9 +299,33 @@
     custom('cal-today-notes', class extends HTMLElement {
         /** @type {HTMLHeadingElement} */ heading;
         /** @type {HTMLUListElement} */ list;
+        /** @type {HTMLButtonElement} */ create;
+        /** @type {HTMLFormElement} */ createForm;
+        /** @type {HTMLButtonElement} */ createFormDone;
 
         connectedCallback() {
             addEventListener('daychanged', /** @param {DayChangedEvent} ev */ ev => this.dayChanged(new Date(ev.detail)));
+
+            this.create.onclick = _ => {
+                this.createForm.style.bottom = '0';
+                // @ts-ignore: name="day"
+                this.createForm.elements.day.valueAsNumber = this.dataset.day;
+            };
+            this.createForm.onsubmit = ev => {
+                ev.preventDefault();
+                /** @type {any} */
+                const elems = this.createForm.elements;
+                const event = new CalEvent({
+                    note: elems.note.value,
+                    day: Date.parse(elems.day.value),
+                    begins: Date.parse(elems.begins.value),
+                    ends: Date.parse(elems.ends.value),
+                    //interval: +elems.interval.value || 0,
+                    //...
+                });
+                db.transaction(CalEvent).then(tr => tr.put(event));
+                this.createForm.style.removeProperty('bottom');
+            };
         }
 
         /** @param {Date} day */
@@ -313,7 +337,7 @@
             const tr = await db.transaction(CalEvent);
             const days = tr.index('day').cursor();
             for await (const [key, day, _] of days)
-                this.list.appendChild(elem('li', {}, `key: ${key}, day: ${day.day}`))
+                this.list.appendChild(elem('li', {}, `key: ${key}, day: ${new Date(day.day)}`));
         }
     });
     // }}}

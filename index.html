@@ -14,6 +14,7 @@
                 height: 100vh;
                 display: flex;
                 flex-direction: column;
+                overflow: hidden;
             }
             #scroll-and-today {
                 flex-grow: 1;
@@ -128,10 +129,39 @@
                     background: repeating-linear-gradient(0deg,
                         var(--ink-like), var(--ink-like) 0px,
                         var(--paper-like) 3px, var(--paper-like) 2rem);
+                    position: relative;
+                }
+                #createForm {
+                    position: absolute;
+                    left: 0;
+                    right: 0;
+                    bottom: -100%;
+                    transition: bottom .75s;
+                    background: #f0f; /*-*/
+                }
+                @media (orientation: landscape) {
+                    #createForm {
+                        height: 34%;
+                        margin: 3rem;
+                    }
+                }
+                @media (orientation: portrait) {
+                    #createForm {
+                        height: calc(90% - 4rem);
+                        margin: 2rem;
+                    }
                 }
             </style>
             <h2 id="heading"></h2>
             <ul id="list"></ul>
+            <button id="create">Create</button>
+            <form id="createForm">
+                <input name="note" placeholder="note" required />
+                <input name="day" type="date" required />
+                <input name="begins" type="date" />
+                <input name="ends" type="date" />
+                <button id="createFormDone">the bed</button>
+            </form>
         </template>
     </head>
 
