@@ -1,7 +1,10 @@
+/// <reference path="database.js" />
 /*-*/; (onload = function() { 'use strict';
     // lib {{{
     /**
+     * @param {string} tagName
      * @param {C} cls
+     * @param {string | undefined} from
      * @template {new() => HTMLElement} C
      *
      * rem: existing callbacks are:
@@ -12,12 +15,14 @@
      */
     function custom(tagName, cls, from) {
         const template = window[tagName];
+        // @ts-ignore: mixin must ...args: any[]
         if (template) cls = class extends cls {
             constructor() {
                 super()
                 const shadow = this.attachShadow({ mode: 'open' });
                 shadow.adoptedStyleSheets = custom.documentStyles;
                 shadow.appendChild(template.content.cloneNode(true));
+                // @ts-ignore: iterable
                 for (const child of shadow.querySelectorAll('*[id]')) this[child.id] = child;
             }
         };
@@ -25,15 +30,21 @@
         return cls;
     }
     custom.documentStyles = [];
+    // @ts-ignore: iterable
     for (const style of document.head.getElementsByTagName('style')) {
         const sheet = new CSSStyleSheet;
         sheet.replaceSync(style.textContent);
         custom.documentStyles.push(sheet);
     }
 
-    function elem(tag, attrs, content) {
+    /**
+     * @param {string} tagName
+     * @param {Record<string, any> | undefined} attrs
+     * @param {string | undefined} content
+     */
+    function elem(tagName, attrs, content) {
         /** @type {HTMLElement} */
-        const r = document.createElement(tag);
+        const r = document.createElement(tagName);
         if (attrs) for (const name in attrs) r.setAttribute(name, attrs[name]);
         if (content) r.innerHTML = content;
         return r;
@@ -41,6 +52,7 @@
     // }}}
 
     // consts {{{
+    /** @typedef {Event & {detail: Date}} DayChangedEvent */
     const NOW = new Date
     const TODAY = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate());
     /** @var {InstanceType<CalMonthsBar>} monthsBar */
@@ -49,18 +61,18 @@
     /** @event {Date | number} daychanged */
 
     /** @type {{days: number, id: string, name: string}[]} */
-    const MONTHS = [
-        { days: 31, id: 'jan' },
-        { days: 28, id: 'feb' },
-        { days: 31, id: 'mar' },
-        { days: 30, id: 'apr' },
-        { days: 31, id: 'may' },
-        { days: 30, id: 'jun' },
-        { days: 31, id: 'jul' },
-        { days: 31, id: 'aug' },
-        { days: 30, id: 'sep' },
-        { days: 31, id: 'oct' },
-        { days: 30, id: 'nov' },
+    const MONTHS = [             // @ts-ignore: name
+        { days: 31, id: 'jan' }, // @ts-ignore: name
+        { days: 28, id: 'feb' }, // @ts-ignore: name
+        { days: 31, id: 'mar' }, // @ts-ignore: name
+        { days: 30, id: 'apr' }, // @ts-ignore: name
+        { days: 31, id: 'may' }, // @ts-ignore: name
+        { days: 30, id: 'jun' }, // @ts-ignore: name
+        { days: 31, id: 'jul' }, // @ts-ignore: name
+        { days: 31, id: 'aug' }, // @ts-ignore: name
+        { days: 30, id: 'sep' }, // @ts-ignore: name
+        { days: 31, id: 'oct' }, // @ts-ignore: name
+        { days: 30, id: 'nov' }, // @ts-ignore: name
         { days: 31, id: 'dec' },
     ];
     for (let k = 0; k < MONTHS.length; ++k) {
@@ -79,7 +91,10 @@
         /** @type {Date?} */ begins;
         /** @type {Date?} */ ends;
 
-        repeats = false;
+        /** @type {number | 'monthly' | 'yearly'} */ interval = 0;
+        skips = 0;
+        occurrences = 1;
+
         lingers = false;
 
         constructor(from) {
@@ -87,11 +102,11 @@
         }
     }
 
-    class CalAdjust {
-        static objectStoreOptions = { autoIncrement: true };
-    }
+    //class CalAdjust {
+    //    static objectStoreOptions = { autoIncrement: true };
+    //}
 
-    const db = database('dum-calendar', { CalEvent, CalAdjust });
+    const db = database('dum-calendar', 1, { CalEvent });
     // }}}
 
     // elements {{{
@@ -109,6 +124,7 @@
 
             const monday = new Date(+this.dataset.monday);
 
+            // @ts-ignore: iterable
             for (const day of this.days.children) {
                 day.textContent = monday.getDate();
                 day.className = MONTHS[monday.getMonth()].id;
@@ -123,11 +139,13 @@
                 monday.setDate(monday.getDate() + 1);
             }
 
-            addEventListener('daychanged', ev => this.dayChanged(new Date(ev.detail)));
+            addEventListener('daychanged', /** @param {DayChangedEvent} ev */ ev => this.dayChanged(new Date(ev.detail)));
 
             monday.setDate(monday.getDate() - 3); // make it Thursday
             const first = new Date(monday.getFullYear(), 0);
+            // @ts-ignore: date arithmetic
             const weekNum = Math.ceil((((monday - first) / 86400000) + 1) / 7);
+            // @ts-ignore: toString
             this.num.textContent = weekNum;
         }
 
@@ -136,8 +154,10 @@
             if (this.selected) this.selected.id = '';
 
             const monday = +this.dataset.monday;
+            // @ts-ignore: date arithmetic
             if (monday <= day && day < monday + 604800000) {
                 const n = day.getDay() - 1; // -1 -> sun, 0 -> mon, ..
+                // @ts-ignore: upcast
                 this.selected = this.days.children[n < 0 ? 6 : n];
                 this.selected.id = 'selected-day';
             }
@@ -154,6 +174,7 @@
 
             if (0 < visible) {
                 const ratio = visible / b.height;
+                // @ts-ignore: iterable
                 for (const day of this.days.children) map.set(day.className, (map.get(day.className) || 0) + ratio);
             }
 
@@ -171,6 +192,7 @@
             let k = 0;
             for (const [id, [nb, yr]] of map) {
                 /** @type {HTMLElement} */
+                // @ts-ignore: upcast
                 const month = this.months.children[k++] || this.months.appendChild(elem('div'));
                 month.className = id;
                 month.style.width = nb / total * 100 + '%';
@@ -227,8 +249,9 @@
             while (this.scrollTop < this.firstElementChild.clientHeight * times) {
                 const prevFirst = this.firstElementChild;
                 const newFirst = this.lastElementChild;
-
+                // @ts-ignore: upcast
                 const monday = new Date(+prevFirst.dataset.monday);
+                // @ts-ignore: upcast
                 newFirst.dataset.monday = monday.setDate(monday.getDate() - 7);
 
                 this.scrollTop += this.insertBefore(newFirst, prevFirst).clientHeight;
@@ -237,8 +260,9 @@
             while (this.scrollHeight - this.lastElementChild.clientHeight * times < this.scrollTop + this.clientHeight) {
                 const prevLast = this.lastElementChild;
                 const newLast = this.firstElementChild;
-
+                // @ts-ignore: upcast
                 const monday = new Date(+prevLast.dataset.monday);
+                // @ts-ignore: upcast
                 newLast.dataset.monday = monday.setDate(monday.getDate() + 7);
 
                 this.scrollTop -= this.appendChild(newLast).clientHeight;
@@ -246,6 +270,7 @@
 
             /** @type {Map<string, [count: number, year: number]>} */
             const overMonth = new Map;
+            // @ts-ignore: iterable
             for (const week of this.children) {
                 /** @type {Map<string, number>} */
                 const overWeek = week.visibleDaysRatios(); // rem: total of 7, not 1
@@ -272,19 +297,23 @@
     });
 
     custom('cal-today-notes', class extends HTMLElement {
-        /** @type {HTMLHeadingElement} */ title;
+        /** @type {HTMLHeadingElement} */ heading;
         /** @type {HTMLUListElement} */ list;
 
         connectedCallback() {
-            addEventListener('daychanged', ev => this.dayChanged(new Date(ev.detail)));
+            addEventListener('daychanged', /** @param {DayChangedEvent} ev */ ev => this.dayChanged(new Date(ev.detail)));
         }
 
         /** @param {Date} day */
-        dayChanged(day) {
+        async dayChanged(day) {
+            // @ts-ignore: toString
             this.dataset.day = +day;
-            this.title.textContent = day.toLocaleDateString(undefined, { dateStyle: 'full' });
+            this.heading.textContent = day.toLocaleDateString(undefined, { dateStyle: 'full' });
 
-            //const events = await db.transaction(CalEvent).index('day').get(..);
+            const tr = await db.transaction(CalEvent);
+            const days = tr.index('day').cursor();
+            for await (const [key, day, _] of days)
+                this.list.appendChild(elem('li', {}, `key: ${key}, day: ${day.day}`))
         }
     });
     // }}}

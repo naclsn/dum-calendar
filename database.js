@@ -1,23 +1,36 @@
-/*-*/;var database = (function() { 'use strict';
+/*-*/; var database = (function() { 'use strict';
+    /**
+     * @typedef {{
+     *     new(plain?: any): any,
+     *     objectStoreOptions: IDBObjectStoreParameters,
+     *     objectStoreIndexes: { [name: string]: { keyPath: string | string[], options?: IDBIndexParameters } }
+     * }} Store
+     */
+
     /** @template {{[name: string]: Store}} S */
     class Database {
         /** @type {string} */ name;
+        /** @type {number} */ version;
         /** @type {S} */ stores;
         /** @type {IDBDatabase?} */ _idb = null;
         /**
          * @param {string} name
+         * @param {number} version
          * @param {S} stores
          */
-        constructor(name, stores) {
+        constructor(name, version, stores) {
             this.name = name
+            this.version = version;
             this.stores = stores;
         }
+
         /** @returns {Promise<IDBDatabase>} */
         idb() {
             return Promise.resolve(this._idb || new Promise((res, rej) => {
-                const req = indexedDB.open(name, migrations.length);
+                const req = indexedDB.open(this.name, this.version);
                 req.onsuccess = _ => {
-                    req.result.onerror = err => console.error(err);
+                    /** @param {any} ev */
+                    req.result.onerror = ev => console.error(ev.target.error);
                     res(this._idb = req.result);
                 };
                 req.onblocked = req.onerror = _ => rej(req.error);
@@ -28,91 +41,150 @@
                         const ostore = exists
                             ? req.result.transaction(name, 'readwrite').objectStore(name)
                             : req.result.createObjectStore(name, store.objectStoreOptions);
-                        if (exists) ostore.openCursor().onsuccess = ev => {
+                        if (exists) ostore.openCursor().onsuccess = /** @param {any} ev */ ev => {
                             /** @type {IDBCursorWithValue} */
                             const cursor = ev.target.result;
                             if (!cursor) return;
-                            cursor.update(new store(cursor.value));
+                            const niw = new store(cursor.value).valueOf();
+                            if (niw) cursor.update(niw);
+                            else cursor.delete();
                             cursor.continue();
                         };
                         for (const name in store.objectStoreIndexes) {
                             const index = store.objectStoreIndexes[name];
                             ostore.createIndex(name, index.keyPath, index.options);
                         }
+                        // @ts-ignore: iterable
                         for (const name of ostore.indexNames) if (!store.objectStoreIndexes[name]) ostore.deleteIndex(name);
                     }
+                    // @ts-ignore: iterable
                     for (const name of req.result.objectStoreNames) if (!this.stores[name]) req.result.deleteObjectStore(name);
                 };
             }));
         }
+
         /**
-         * @param {new() => C} store
+         * @param {new(plain?: any) => C} store
          * @returns {Promise<Transaction<C>>}
          * @template C
          */
         transaction(store) { return this.idb().then(r => new Transaction(r, store)); }
     }
 
+    function promisify(fn, args) {
+        return new Promise((res, rej) => {
+            const req = this[fn].apply(this, args);
+            req.onsuccess = ev => res(ev.target.result);
+            req.onerror = ev => rej(ev.target.error);
+        });
+    }
+
     /** @template C */
     class Transaction {
-        /** @type {new() => C} */ store;
+        /** @type {new(plain?: any) => C} */ store;
         /** @type {IDBObjectStore} */ objectStore;
         constructor(db, store) {
             this.store = store;
             this.objectStore = db.transaction(store.name).objectStore(store.name);
         }
-        promisify(fn, args) {
-            return new Promise((res, rej) => {
-                const req = this.objectStore[fn].apply(this.objectStore, args);
-                req.onsuccess = ev => res(ev.target.result);
-                req.onerror = ev => rej(ev.target.error);
-            });
-        }
+
         /**
          * @param {C} value
          * @param {IDBCursorWithValue?} key
          * @returns {Promise<IDBValidKey>}
          */
-        add(value, key) { return this.promisify('add', [value, key]); }
+        add(value, key) { return promisify.call(this.objectStore, 'add', [value, key]); }
+        /**
+         * @param {IDBValidKey | IDBKeyRange | undefined} query
+         * @returns {Promise<number>}
+         */
+        count(query) { return promisify.call(this.objectStore, 'count', [query]); }
+        /**
+         * @param {IDBValidKey | IDBKeyRange | undefined?} query
+         * @param {IDBCursorDirection | undefined?} direction
+         * @returns {Cursor<C>}
+         */
+        cursor(query, direction) { return new Cursor(this.objectStore.openCursor(query, direction), this.store); }
+        /**
+         * @param {IDBValidKey | IDBKeyRange} query
+         * @returns {Promise<void>}
+         */
+        delete(query) { return promisify.call(this.objectStore, 'delete', [query]); }
+        /**
+         * @param {IDBValidKey | IDBKeyRange} query
+         * @returns {Promise<C>}
+         */
+        get(query) { return promisify.call(this.objectStore, 'get', [query]).then(r => new this.store(r)); }
+        /**
+         * @param {string} name
+         * @returns {Index<C>}
+         */
+        index(name) { return new Index(this.objectStore.index(name), this.store); }
         /**
          * @param {C} item
          * @param {IDBCursorWithValue?} key
          * @returns {Promise<IDBValidKey>}
          */
-        put(item, key) { return this.promisify('put', [item, key]); }
-        /**
-         * @param {IDBValidKey | IDBKeyRange} query
-         * @returns {Promise<C>}
-         */
-        get(query) { return this.promisify('get', [query]).then(r => new this.store(r)); }
-        /**
-         * @param {string} name
-         * @returns {Index<C>}
-         */
-        index(name) { return new Index(this.objectStore.index(name), this); }
+        put(item, key) { return promisify.call(this.objectStore, 'put', [item, key]); }
     }
 
     /** @template C */
     class Index {
+        /** @type {new(plain?: any) => C} */ store;
         /** @type {IDBIndex} */ index;
-        constructor(index) {
+        constructor(index, store) {
+            this.store = store;
             this.index = index;
         }
+        /**
+         * @param {IDBValidKey | IDBKeyRange | undefined} query
+         * @returns {Promise<number>}
+         */
+        count(query) { return promisify.call(this.index, 'count', [query]); }
+        /**
+         * @param {IDBValidKey | IDBKeyRange | undefined?} query
+         * @param {IDBCursorDirection | undefined?} direction
+         * @returns {Cursor<C>}
+         */
+        cursor(query, direction) { return new Cursor(this.index.openCursor(query, direction), this.store); }
+        /**
+         * @param {IDBValidKey | IDBKeyRange} query
+         * @returns {Promise<C>}
+         */
+        get(query) { return promisify.call(this.index, 'get', [query]).then(r => new this.store(r)); }
     }
 
     /** @template C */
-    class Cursor {}
+    class Cursor {
+        /** @type {new(plain?: any) => C} */ store;
+        /** @type {IDBRequest<IDBCursorWithValue | null>} */ openedCursor;
+        /** @type {IDBCursorWithValue} */ _cursor = null;
+        _done = false;
+        constructor(opened, store) {
+            this.store = store;
+            this.openedCursor = opened;
+        }
+        [Symbol.asyncIterator]() { return this; }
+
+        /** @returns {Promise<{done: boolean, value: [IDBValidKey, C, IDBCursorWithValue]}>} */
+        next() {
+            // @ts-ignore: value being undefined
+            return this._done ? Promise.resolve({ done: true }) : new Promise((res, rej) => {
+                this.openedCursor.onerror = _ => rej(this.openedCursor.error);
+                this.openedCursor.onsuccess = _ => {
+                    const c = this._cursor = this.openedCursor.result;
+                    res({ done: this._done = !c, value: c && [c.key, new this.store(c.value), c] });
+                };
+                if (this._cursor) this._cursor.continue();
+            });
+        }
+    }
 
     /**
-     * @typedef {{
-     *     new() => any,
-     *     objectStoreOptions: IDBObjectStoreParameters,
-     *     objectStoreIndexes: { [name: string]: { keyPath: string | Iterable<string>, options?: IDBIndexParameters } }
-     * }} Store
-     *
      * @template {{[name: string]: Store}} S
      * @param {string} name
+     * @param {number} version
      * @param {S} stores
      */
-    return (name, stores) => new Database(name, stores);
+    return (name, version, stores) => new Database(name, version, stores);
 })();
