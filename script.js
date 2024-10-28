@@ -4,7 +4,7 @@
     /**
      * @param {string} tagName
      * @param {C} cls
-     * @param {string | undefined} from
+     * @param {string} [from]
      * @template {new() => HTMLElement} C
      *
      * rem: existing callbacks are:
@@ -39,8 +39,8 @@
 
     /**
      * @param {string} tagName
-     * @param {Record<string, any> | undefined} attrs
-     * @param {string | undefined} content
+     * @param {Record<string, any>} [attrs]
+     * @param {string} [content]
      */
     function elem(tagName, attrs, content) {
         /** @type {HTMLElement} */
@@ -53,6 +53,8 @@
 
     // consts {{{
     /** @typedef {Event & {detail: Date}} DayChangedEvent */
+    /** @typedef {Event & {detail: [IDBValidKey, Activity]}} ActivityAddedEvent */
+
     const NOW = new Date
     const TODAY = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate());
     /** @var {InstanceType<CalMonthsBar>} monthsBar */
@@ -61,20 +63,8 @@
     /** @event {Date | number} daychanged */
 
     /** @type {{days: number, id: string, name: string}[]} */
-    const MONTHS = [             // @ts-ignore: name
-        { days: 31, id: 'jan' }, // @ts-ignore: name
-        { days: 28, id: 'feb' }, // @ts-ignore: name
-        { days: 31, id: 'mar' }, // @ts-ignore: name
-        { days: 30, id: 'apr' }, // @ts-ignore: name
-        { days: 31, id: 'may' }, // @ts-ignore: name
-        { days: 30, id: 'jun' }, // @ts-ignore: name
-        { days: 31, id: 'jul' }, // @ts-ignore: name
-        { days: 31, id: 'aug' }, // @ts-ignore: name
-        { days: 30, id: 'sep' }, // @ts-ignore: name
-        { days: 31, id: 'oct' }, // @ts-ignore: name
-        { days: 30, id: 'nov' }, // @ts-ignore: name
-        { days: 31, id: 'dec' },
-    ];
+    // @ts-ignore: name
+    const MONTHS = [{days:31,id:'jan'},{days:28,id:'feb'},{days:31,id:'mar'},{days:30,id:'apr'},{days:31,id:'may'},{days:30,id:'jun'},{days:31,id:'jul'},{days:31,id:'aug'},{days:30,id:'sep'},{days:31,id:'oct'},{days:30,id:'nov'},{days:31,id:'dec'}];
     for (let k = 0; k < MONTHS.length; ++k) {
         MONTHS[k].name = new Date(0, k).toLocaleString(undefined, { month: 'long' });
         MONTHS[MONTHS[k].id] = k;
@@ -82,9 +72,12 @@
     // }}}
 
     // db {{{
-    class CalEvent {
+    class Activity {
         static objectStoreOptions = { autoIncrement: true };
-        static objectStoreIndexes = { day: { keyPath: 'day' } };
+        static objectStoreIndexes = {
+            day: { keyPath: 'day' },
+            lingers: { keyPath: 'lingers' },
+        };
 
         note = '';
         day = +TODAY;
@@ -102,11 +95,16 @@
         }
     }
 
-    //class CalAdjust {
+    //class Adjustment {
     //    static objectStoreOptions = { autoIncrement: true };
+    //    static objectStoreIndexes = { act: { keyPath: 'act' } };
+    //
+    //    act = 0;
+    //
+    //    shift = 0;
     //}
 
-    const db = database('dum-calendar', 1, { CalEvent });
+    const db = database('dum-calendar', 1, { Activity });
     // }}}
 
     // elements {{{
@@ -130,7 +128,7 @@
                 day.className = MONTHS[monday.getMonth()].id;
 
                 const timestamp = +monday;
-                if (todayNotes.dataset.day == timestamp) {
+                if (+todayNotes.dataset.day == timestamp) {
                     this.selected = day;
                     this.selected.id = 'selected-day';
                 }
@@ -305,6 +303,10 @@
 
         connectedCallback() {
             addEventListener('daychanged', /** @param {DayChangedEvent} ev */ ev => this.dayChanged(new Date(ev.detail)));
+            addEventListener('activityadded', /** @param {ActivityAddedEvent} ev */ ev => {
+                const [key, calev] = ev.detail;
+                this.list.appendChild(elem('li', {}, `key: ${key}, note: ${calev.note}, day: ${new Date(calev.day)}`));
+            });
 
             this.create.onclick = _ => {
                 this.createForm.style.bottom = '0';
@@ -315,7 +317,7 @@
                 ev.preventDefault();
                 /** @type {any} */
                 const elems = this.createForm.elements;
-                const event = new CalEvent({
+                const event = new Activity({
                     note: elems.note.value,
                     day: Date.parse(elems.day.value),
                     begins: Date.parse(elems.begins.value),
@@ -323,7 +325,9 @@
                     //interval: +elems.interval.value || 0,
                     //...
                 });
-                db.transaction(CalEvent).then(tr => tr.put(event));
+                db.transaction(Activity, 'readwrite')
+                    .then(tr => tr.add(event))
+                    .then(key => dispatchEvent(new CustomEvent('activityadded', { detail: [key, event] })));
                 this.createForm.style.removeProperty('bottom');
             };
         }
@@ -334,16 +338,14 @@
             this.dataset.day = +day;
             this.heading.textContent = day.toLocaleDateString(undefined, { dateStyle: 'full' });
 
-            const tr = await db.transaction(CalEvent);
+            const tr = await db.transaction(Activity);
             const days = tr.index('day').cursor();
-            for await (const [key, day, _] of days)
-                this.list.appendChild(elem('li', {}, `key: ${key}, day: ${new Date(day.day)}`));
+            for await (const [key, calev, _] of days)
+                this.list.appendChild(elem('li', {}, `key: ${key}, note: ${calev.note}, day: ${new Date(calev.day)}`));
         }
     });
     // }}}
 
-    // init {{{
     document.head.appendChild(elem('title', {}, TODAY.toLocaleDateString()));
     dispatchEvent(new CustomEvent('daychanged', { detail: TODAY }));
-    // }}}
 });

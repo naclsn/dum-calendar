@@ -65,10 +65,12 @@
 
         /**
          * @param {new(plain?: any) => C} store
+         * @param {IDBTransactionMode} [mode]
+         * @param {IDBTransactionOptions} [options]
          * @returns {Promise<Transaction<C>>}
          * @template C
          */
-        transaction(store) { return this.idb().then(r => new Transaction(r, store)); }
+        transaction(store, mode, options) { return this.idb().then(db => new Transaction(db.transaction(store.name, mode, options), store)); }
     }
 
     function promisify(fn, args) {
@@ -83,14 +85,14 @@
     class Transaction {
         /** @type {new(plain?: any) => C} */ store;
         /** @type {IDBObjectStore} */ objectStore;
-        constructor(db, store) {
+        constructor(trans, store) {
             this.store = store;
-            this.objectStore = db.transaction(store.name).objectStore(store.name);
+            this.objectStore = trans.objectStore(store.name);
         }
 
         /**
          * @param {C} value
-         * @param {IDBCursorWithValue?} key
+         * @param {IDBValidKey} [key]
          * @returns {Promise<IDBValidKey>}
          */
         add(value, key) { return promisify.call(this.objectStore, 'add', [value, key]); }
@@ -100,8 +102,8 @@
          */
         count(query) { return promisify.call(this.objectStore, 'count', [query]); }
         /**
-         * @param {IDBValidKey | IDBKeyRange | undefined?} query
-         * @param {IDBCursorDirection | undefined?} direction
+         * @param {IDBValidKey | IDBKeyRange | null} [query]
+         * @param {IDBCursorDirection} [direction]
          * @returns {Cursor<C>}
          */
         cursor(query, direction) { return new Cursor(this.objectStore.openCursor(query, direction), this.store); }
@@ -122,7 +124,7 @@
         index(name) { return new Index(this.objectStore.index(name), this.store); }
         /**
          * @param {C} item
-         * @param {IDBCursorWithValue?} key
+         * @param {IDBValidKey} [key]
          * @returns {Promise<IDBValidKey>}
          */
         put(item, key) { return promisify.call(this.objectStore, 'put', [item, key]); }
@@ -137,13 +139,13 @@
             this.index = index;
         }
         /**
-         * @param {IDBValidKey | IDBKeyRange | undefined} query
+         * @param {IDBValidKey | IDBKeyRange} [query]
          * @returns {Promise<number>}
          */
         count(query) { return promisify.call(this.index, 'count', [query]); }
         /**
-         * @param {IDBValidKey | IDBKeyRange | undefined?} query
-         * @param {IDBCursorDirection | undefined?} direction
+         * @param {IDBValidKey | IDBKeyRange | null} [query]
+         * @param {IDBCursorDirection} [direction]
          * @returns {Cursor<C>}
          */
         cursor(query, direction) { return new Cursor(this.index.openCursor(query, direction), this.store); }
@@ -158,7 +160,7 @@
     class Cursor {
         /** @type {new(plain?: any) => C} */ store;
         /** @type {IDBRequest<IDBCursorWithValue | null>} */ openedCursor;
-        /** @type {IDBCursorWithValue} */ _cursor = null;
+        /** @type {IDBCursorWithValue?} */ _cursor = null;
         _done = false;
         constructor(opened, store) {
             this.store = store;
