@@ -180,6 +180,12 @@
                 if (this._cursor) this._cursor.continue();
             });
         }
+
+        /** @param {(value: [IDBValidKey, C, IDBCursorWithValue]) => void} does */
+        forEach(does) {
+            // TODO: maybe write it out directly, to 'optimize' out building promises and lambdas
+            this.next().then(({ done, value }) => done || (does(value), this.forEach(does)));
+        }
     }
 
     /**

@@ -80,9 +80,9 @@
         };
 
         note = '';
-        day = +TODAY;
-        /** @type {number?} */ begins = null;
-        /** @type {number?} */ ends = null;
+        /** date (ms) */ day = +TODAY;
+        /** @type {number?} time (ms) */ begins = null;
+        /** @type {number?} time (ms) */ ends = null;
 
         /** @type {number | 'monthly' | 'yearly'} */ interval = 0;
         skips = 0;
@@ -104,7 +104,7 @@
     //    shift = 0;
     //}
 
-    const db = database('dum-calendar', 1, { Activity });
+    const db = database('dum-calendar', 2, { Activity });
     // }}}
 
     // elements {{{
@@ -121,6 +121,8 @@
             }
 
             const monday = new Date(+this.dataset.monday);
+            /** @type {{ day: HTMLElement, timestamp: number }[]} */
+            const queryTasks = [];
 
             // @ts-ignore: iterable
             for (const day of this.days.children) {
@@ -133,11 +135,23 @@
                     this.selected.id = 'selected-day';
                 }
                 day.onclick = _ => dispatchEvent(new CustomEvent('daychanged', { detail: timestamp }));
+                queryTasks.push({ day, timestamp });
 
                 monday.setDate(monday.getDate() + 1);
             }
 
+            db.transaction(Activity).then(tr => {
+                const index = tr.index('day');
+                for (const { day, timestamp } of queryTasks) index.cursor(timestamp).forEach(([_, act]) =>
+                    day.appendChild(elem('span', { style: 'display: none' }, `${act.note} (${act.begins / 1000/60/60} &mdash; ${act.ends / 1000/60/60})`))
+                );
+            });
+
             addEventListener('daychanged', /** @param {DayChangedEvent} ev */ ev => this.dayChanged(new Date(ev.detail)));
+            addEventListener('activityadded', /** @param {ActivityAddedEvent} ev */ ev => {
+                const act = ev.detail[1];
+                if (+this.dataset.monday === act.day) console.warn("day added today! and such");
+            });
 
             monday.setDate(monday.getDate() - 3); // make it Thursday
             const first = new Date(monday.getFullYear(), 0);
@@ -304,8 +318,8 @@
         connectedCallback() {
             addEventListener('daychanged', /** @param {DayChangedEvent} ev */ ev => this.dayChanged(new Date(ev.detail)));
             addEventListener('activityadded', /** @param {ActivityAddedEvent} ev */ ev => {
-                const [key, calev] = ev.detail;
-                this.list.appendChild(elem('li', {}, `key: ${key}, note: ${calev.note}, day: ${new Date(calev.day)}`));
+                const act = ev.detail[1];
+                if (+this.dataset.day === act.day) console.warn("day added today! and such");
             });
 
             this.create.onclick = _ => {
@@ -319,12 +333,13 @@
                 const elems = this.createForm.elements;
                 const event = new Activity({
                     note: elems.note.value,
-                    day: Date.parse(elems.day.value),
-                    begins: Date.parse(elems.begins.value),
-                    ends: Date.parse(elems.ends.value),
+                    day: +new Date(elems.day.value + "T00:00"),
+                    begins: elems.begins.value ? elems.begins.valueAsNumber : null,
+                    ends: elems.ends.value ? elems.ends.valueAsNumber : null,
                     //interval: +elems.interval.value || 0,
                     //...
                 });
+                console.dir(event)
                 db.transaction(Activity, 'readwrite')
                     .then(tr => tr.add(event))
                     .then(key => dispatchEvent(new CustomEvent('activityadded', { detail: [key, event] })));
@@ -333,15 +348,14 @@
         }
 
         /** @param {Date} day */
-        async dayChanged(day) {
+        dayChanged(day) {
             // @ts-ignore: toString
             this.dataset.day = +day;
             this.heading.textContent = day.toLocaleDateString(undefined, { dateStyle: 'full' });
 
-            const tr = await db.transaction(Activity);
-            const days = tr.index('day').cursor();
-            for await (const [key, calev, _] of days)
-                this.list.appendChild(elem('li', {}, `key: ${key}, note: ${calev.note}, day: ${new Date(calev.day)}`));
+            db.transaction(Activity).then(tr => tr.index('day').cursor(+day).forEach(([_, act]) =>
+                this.list.appendChild(elem('li', {}, `note: ${act.note}, begins: ${act.begins / 1000/60/60}, ends: ${act.ends / 1000/60/60}`))
+            ));
         }
     });
     // }}}
