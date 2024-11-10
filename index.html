@@ -82,7 +82,25 @@
             <div id="months"></div>
         </template>
 
-        <template id='cal-week'>
+        <template id="cal-week-day">
+            <style>
+                :host {
+                    position: relative;
+                }
+                #num {
+                    position: absolute;
+                    right: 0;
+                }
+                #acts > div {
+                    width: 75%;
+                    transform: translateX(16.66%);
+                    position: absolute;
+                }
+            </style>
+            <div id="acts"></div><span id="num"></span>
+        </template>
+
+        <template id="cal-week">
             <style>
                 :host {
                     display: block;
@@ -90,43 +108,48 @@
                 #num {
                     display: inline-block;
                 }
-                #days > div {
+                #days > cal-week-day {
                     display: inline-block;
+                    height: 100%;
                     text-align: right;
                     background: var(--month-bg);
                 }
-                #days > div#selected-day {
+                #days > cal-week-day#selected-day {
                     box-shadow: inset 0 0 20px #fff;
                     transition: box-shadow .25s;
                 }
                 @media (orientation: portrait) {
+                    :host {
+                        height: 3rem;
+                    }
                     #num {
                         width: 12.5%;
                     }
-                    #days > div {
+                    #days > cal-week-day {
                         width: 12.5%;
-                        height: 3rem;
                     }
                 }
                 @media (orientation: landscape) {
+                    :host {
+                        height: calc((100vh - 4rem) / 8.3);
+                    }
                     #num {
                         width: 7vw;
                     }
-                    #days > div {
+                    #days > cal-week-day {
                         width: 7vw;
-                        height: calc((100vh - 4rem) / 8.3);
                     }
                 }
             </style>
             <div id="num">
-            </div><span id="days"><div class="mon">
-                            </div><div class="tue">
-                            </div><div class="wed">
-                            </div><div class="thu">
-                            </div><div class="fri">
-                            </div><div class="sat">
-                            </div><div class="sun">
-                            </div></span>
+            </div><span id="days"><cal-week-day id="mon">
+                   </cal-week-day><cal-week-day id="tue">
+                   </cal-week-day><cal-week-day id="wed">
+                   </cal-week-day><cal-week-day id="thu">
+                   </cal-week-day><cal-week-day id="fri">
+                   </cal-week-day><cal-week-day id="sat">
+                   </cal-week-day><cal-week-day id="sun">
+                   </cal-week-day></span>
         </template>
 
         <!-- id="cal-scroll-view" -->
@@ -137,6 +160,7 @@
                     display: block;
                     flex-shrink: 0;
                     transition: height .25s;
+                    scrollbar-width: none;
                 }
                 @media (orientation: portrait) {
                     cal-scroll-view {

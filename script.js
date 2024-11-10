@@ -45,7 +45,13 @@
     function elem(tagName, attrs, content) {
         /** @type {HTMLElement} */
         const r = document.createElement(tagName);
-        if (attrs) for (const name in attrs) r.setAttribute(name, attrs[name]);
+        if (attrs) {
+            if (attrs.style && 'string' !== typeof attrs.style) {
+                for (const name in attrs.style) r.style[name] = attrs.style[name];
+                delete attrs.style;
+            }
+            for (const name in attrs) r.setAttribute(name, attrs[name]);
+        }
         if (content) r.innerHTML = content;
         return r;
     }
@@ -69,6 +75,15 @@
         MONTHS[k].name = new Date(0, k).toLocaleString(undefined, { month: 'long' });
         MONTHS[MONTHS[k].id] = k;
     }
+
+    /** @param {Activity} act */
+    function activityColor(act) {
+        const hash = act.note.split("\n", 1)[0].split("").reduce((acc, cur) => ((acc << 5) - acc + cur.charCodeAt(0))|0, 0);
+        return "hsl(" + hash%360 + ", 80%, 50%)";
+    }
+
+    const DAY_BEGINS = 7 * 60*60*1000;
+    const DAY_ENDS = 22 * 60*60*1000;
     // }}}
 
     // db {{{
@@ -108,6 +123,38 @@
     // }}}
 
     // elements {{{
+    custom('cal-week-day', class extends HTMLElement {
+        /** @type {HTMLSpanElement} */ num;
+        /** @type {HTMLDivElement} */ acts;
+
+        static observedAttributes = ['data-date'];
+        attributeChangedCallback() {
+            this.num.textContent = this.dataset.date;
+            this.acts.textContent = null;
+        }
+
+        /** @param {Activity} act */
+        addActivity(act) {
+            const hundred = (DAY_ENDS-DAY_BEGINS)/100;
+            const niw = elem('div', {
+                style: {
+                    height: (act.ends-act.begins) / hundred+"%",
+                    backgroundColor: activityColor(act),
+                    top: (act.begins-DAY_BEGINS) / hundred+"%",
+                },
+                'data-begins': act.begins,
+                'data-ends': act.ends,
+            });
+
+            if (!this.acts.childElementCount || this.acts.lastElementChild.dataset.ends < act.begins)
+                this.acts.appendChild(niw);
+            else for (const ch of this.acts.children) if (acts.begins <= ch.dataset.ends) {
+                this.acts.insertBefore(niw, ch);
+                break;
+            }
+        }
+    });
+
     custom('cal-week', class extends HTMLElement {
         /** @type {HTMLSpanElement} */ days;
         /** @type {HTMLDivElement} */ num;
@@ -121,42 +168,49 @@
             }
 
             const monday = new Date(+this.dataset.monday);
-            /** @type {{ day: HTMLElement, timestamp: number }[]} */
-            const queryTasks = [];
 
+            const curr = new Date(monday);
             // @ts-ignore: iterable
             for (const day of this.days.children) {
-                day.textContent = monday.getDate();
-                day.className = MONTHS[monday.getMonth()].id;
+                day.dataset.date = curr.getDate();
+                day.className = MONTHS[curr.getMonth()].id;
 
-                const timestamp = +monday;
-                if (+todayNotes.dataset.day == timestamp) {
+                const timestamp = +curr;
+                if (+todayNotes.dataset.day === timestamp) {
                     this.selected = day;
                     this.selected.id = 'selected-day';
                 }
                 day.onclick = _ => dispatchEvent(new CustomEvent('daychanged', { detail: timestamp }));
-                queryTasks.push({ day, timestamp });
 
-                monday.setDate(monday.getDate() + 1);
+                curr.setDate(curr.getDate() + 1);
             }
 
             db.transaction(Activity).then(tr => {
                 const index = tr.index('day');
-                for (const { day, timestamp } of queryTasks) index.cursor(timestamp).forEach(([_, act]) =>
-                    day.appendChild(elem('span', { style: 'display: none' }, `${act.note} (${act.begins / 1000/60/60} &mdash; ${act.ends / 1000/60/60})`))
-                );
+
+                const curr = new Date(monday);
+                // @ts-ignore: iterable
+                for (const day of this.days.children) {
+                    index.cursor(+curr).forEach(([_, act]) => day.addActivity(act));
+                    curr.setDate(curr.getDate() + 1);
+                }
             });
 
             addEventListener('daychanged', /** @param {DayChangedEvent} ev */ ev => this.dayChanged(new Date(ev.detail)));
             addEventListener('activityadded', /** @param {ActivityAddedEvent} ev */ ev => {
                 const act = ev.detail[1];
-                if (+this.dataset.monday === act.day) console.warn("day added today! and such");
+                const curr = new Date(+this.dataset.monday);
+                for (const day of this.days.children) {
+                    if (+curr === act.day) day.addActivity(act);
+                    curr.setDate(curr.getDate() + 1);
+                }
             });
 
-            monday.setDate(monday.getDate() - 3); // make it Thursday
-            const first = new Date(monday.getFullYear(), 0);
+            const thursday = new Date(monday);
+            thursday.setDate(thursday.getDate() - 3);
+            const first = new Date(thursday.getFullYear(), 0);
             // @ts-ignore: date arithmetic
-            const weekNum = Math.ceil((((monday - first) / 86400000) + 1) / 7);
+            const weekNum = Math.ceil((((thursday - first) / 86400000) + 1) / 7);
             // @ts-ignore: toString
             this.num.textContent = weekNum;
         }
@@ -322,10 +376,13 @@
                 if (+this.dataset.day === act.day) console.warn("day added today! and such");
             });
 
+            this.create.focus();
             this.create.onclick = _ => {
                 this.createForm.style.bottom = '0';
+                const day = new Date(+this.dataset.day);
+                const f = n => ("0" + n).slice(-2);
                 // @ts-ignore: name="day"
-                this.createForm.elements.day.valueAsNumber = this.dataset.day;
+                this.createForm.elements.day.value = day.getFullYear() + "-" + f(day.getMonth()+1) + "-" + f(day.getDate());
             };
             this.createForm.onsubmit = ev => {
                 ev.preventDefault();
@@ -353,6 +410,7 @@
             this.dataset.day = +day;
             this.heading.textContent = day.toLocaleDateString(undefined, { dateStyle: 'full' });
 
+            this.list.textContent = null;
             db.transaction(Activity).then(tr => tr.index('day').cursor(+day).forEach(([_, act]) =>
                 this.list.appendChild(elem('li', {}, `note: ${act.note}, begins: ${act.begins / 1000/60/60}, ends: ${act.ends / 1000/60/60}`))
             ));
