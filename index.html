@@ -214,6 +214,16 @@
                 <input name="day" type="date" required />
                 <input name="begins" type="time" />
                 <input name="ends" type="time" />
+
+                <datalist id="interval-datalist">
+                    <option value="lingers"></option>
+                    <option value="monthly"></option>
+                    <option value="yearly"></option>
+                </datalist>
+                <input name="interval" list="interval-datalist" pattern="lingers|[0-9]*|monthly|yearly" />
+                <input name="skips" type="number" min="0" />
+                <input name="occurrences" type="number" />
+
                 <button id="createFormDone">Done</button>
             </form>
         </template>

@@ -79,7 +79,7 @@
     /** @param {Activity} act */
     function activityColor(act) {
         const hash = act.note.split("\n", 1)[0].split("").reduce((acc, cur) => ((acc << 5) - acc + cur.charCodeAt(0))|0, 0);
-        return "hsl(" + hash%360 + ", 80%, 50%)";
+        return 'hsl(' + hash%360 + ', 80%, 50%)';
     }
 
     const DAY_BEGINS = 7 * 60*60*1000;
@@ -91,19 +91,18 @@
         static objectStoreOptions = { autoIncrement: true };
         static objectStoreIndexes = {
             day: { keyPath: 'day' },
-            lingers: { keyPath: 'lingers' },
+            occurrences: { keyPath: 'occurrences' },
+            interval: { keyPath: 'interval' },
         };
 
-        note = '';
+        note = "(empty note)";
         /** date (ms) */ day = +TODAY;
         /** @type {number?} time (ms) */ begins = null;
         /** @type {number?} time (ms) */ ends = null;
 
-        /** @type {number | 'monthly' | 'yearly'} */ interval = 0;
+        /** @type {'lingers' | number | 'monthly' | 'yearly'} */ interval = 0;
         skips = 0;
-        occurrences = 1;
-
-        lingers = false;
+        occurrences = 0; // 0 is no repeat, 1 is infinite occurrences since `day`, more is count
 
         constructor(from) {
             if (from) Object.assign(this, from);
@@ -126,21 +125,29 @@
     custom('cal-week-day', class extends HTMLElement {
         /** @type {HTMLSpanElement} */ num;
         /** @type {HTMLDivElement} */ acts;
+        /** @type {Set<IDBValidKey>} */ keys = new Set;
 
         static observedAttributes = ['data-date'];
         attributeChangedCallback() {
             this.num.textContent = this.dataset.date;
             this.acts.textContent = null;
+            this.keys.clear();
         }
 
-        /** @param {Activity} act */
-        addActivity(act) {
+        /**
+         * @param {IDBValidKey} key
+         * @param {Activity} act
+         */
+        addActivity(key, act) {
+            if (this.keys.has(key)) return;
+            this.keys.add(key);
+
             const hundred = (DAY_ENDS-DAY_BEGINS)/100;
             const niw = elem('div', {
                 style: {
-                    height: (act.ends-act.begins) / hundred+"%",
+                    height: (act.ends-act.begins) / hundred+'%',
                     backgroundColor: activityColor(act),
-                    top: (act.begins-DAY_BEGINS) / hundred+"%",
+                    top: (act.begins-DAY_BEGINS) / hundred+'%',
                 },
                 'data-begins': act.begins,
                 'data-ends': act.ends,
@@ -150,7 +157,7 @@
             if (!this.acts.childElementCount || this.acts.lastElementChild.dataset.ends < act.begins)
                 this.acts.appendChild(niw);
             // @ts-ignore: iterable
-            else for (const ch of this.acts.children) if (acts.begins <= ch.dataset.ends) {
+            else for (const ch of this.acts.children) if (act.begins <= ch.dataset.ends) {
                 this.acts.insertBefore(niw, ch);
                 break;
             }
@@ -188,23 +195,44 @@
             }
 
             db.transaction(Activity).then(tr => {
-                const index = tr.index('day');
-
+                const dayIndex = tr.index('day');
                 const curr = new Date(monday);
                 // @ts-ignore: iterable
                 for (const day of this.days.children) {
-                    index.cursor(+curr).forEach(([_, act]) => day.addActivity(act));
+                    dayIndex.cursor(+curr).forEach(([key, act]) => day.addActivity(key, act));
                     curr.setDate(curr.getDate() + 1);
                 }
+
+                tr.index('occurrences').cursor(IDBKeyRange.lowerBound(1)).forEach(([key, act]) => {
+                    const curr = new Date(monday);
+                    // @ts-ignore: iterable
+                    for (const day of this.days.children) {
+                        // TODO
+                        act.occurrences
+                        act.interval
+                        act.skips
+                        if (act.day < +curr) // && ...
+                            day.addActivity(key, act)
+                        curr.setDate(curr.getDate() + 1);
+                    }
+                });
+
+                tr.index('interval').cursor('lingers').forEach(([key, act]) => {
+                    // @ts-ignore: date arithmetic
+                    for (let k = Math.max(0, (act.day-monday) / 86400000 |0); k < this.days.childElementCount; ++k)
+                        this.days.children[k].addActivity(key, act)
+                });
             });
 
             addEventListener('daychanged', /** @param {DayChangedEvent} ev */ ev => this.dayChanged(new Date(ev.detail)));
             addEventListener('activityadded', /** @param {ActivityAddedEvent} ev */ ev => {
-                const act = ev.detail[1];
+                const [key, act] = ev.detail;
                 const curr = new Date(+this.dataset.monday);
                 // @ts-ignore: iterable
                 for (const day of this.days.children) {
-                    if (+curr === act.day) day.addActivity(act);
+                    // TODO
+                    if (+curr === act.day) // || ...
+                        day.addActivity(key, act);
                     curr.setDate(curr.getDate() + 1);
                 }
             });
@@ -376,30 +404,36 @@
             addEventListener('daychanged', /** @param {DayChangedEvent} ev */ ev => this.dayChanged(new Date(ev.detail)));
             addEventListener('activityadded', /** @param {ActivityAddedEvent} ev */ ev => {
                 const act = ev.detail[1];
-                if (+this.dataset.day === act.day) console.warn("day added today! and such");
+                if (+this.dataset.day === act.day)
+                    // TODO
+                    this.list.appendChild(elem('li', {}, `note: ${act.note}, begins: ${act.begins / 1000/60/60}, ends: ${act.ends / 1000/60/60}`))
             });
 
-            this.create.focus();
             this.create.onclick = _ => {
                 this.createForm.style.bottom = '0';
                 const day = new Date(+this.dataset.day);
-                const f = n => ("0" + n).slice(-2);
+                const f = n => ('0' + n).slice(-2);
                 // @ts-ignore: name="day"
-                this.createForm.elements.day.value = day.getFullYear() + "-" + f(day.getMonth()+1) + "-" + f(day.getDate());
+                this.createForm.elements.day.value = day.getFullYear() + '-' + f(day.getMonth()+1) + '-' + f(day.getDate());
+                // @ts-ignore: name="node"
+                this.createForm.elements.note.focus();
             };
             this.createForm.onsubmit = ev => {
                 ev.preventDefault();
+
                 /** @type {any} */
                 const elems = this.createForm.elements;
                 const event = new Activity({
                     note: elems.note.value,
-                    day: +new Date(elems.day.value + "T00:00"),
+                    day: +new Date(elems.day.value + 'T00:00'),
                     begins: elems.begins.value ? elems.begins.valueAsNumber : null,
                     ends: elems.ends.value ? elems.ends.valueAsNumber : null,
-                    //interval: +elems.interval.value || 0,
-                    //...
+
+                    interval: isNaN(+elems.interval.value) ? elems.interval.value || 0 : +elems.interval.value,
+                    skips: +elems.skips.value || 0,
+                    occurrences: +elems.occurrences.value || 0,
                 });
-                console.dir(event)
+
                 db.transaction(Activity, 'readwrite')
                     .then(tr => tr.add(event))
                     .then(key => dispatchEvent(new CustomEvent('activityadded', { detail: [key, event] })));
@@ -415,6 +449,7 @@
 
             this.list.textContent = null;
             db.transaction(Activity).then(tr => tr.index('day').cursor(+day).forEach(([_, act]) =>
+                // TODO
                 this.list.appendChild(elem('li', {}, `note: ${act.note}, begins: ${act.begins / 1000/60/60}, ends: ${act.ends / 1000/60/60}`))
             ));
         }

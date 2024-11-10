@@ -39,7 +39,7 @@
                         const store = this.stores[name];
                         const exists = req.result.objectStoreNames.contains(name);
                         const ostore = exists
-                            ? req.result.transaction(name, 'readwrite').objectStore(name)
+                            ? req.transaction.objectStore(name)
                             : req.result.createObjectStore(name, store.objectStoreOptions);
                         if (exists) ostore.openCursor().onsuccess = /** @param {any} ev */ ev => {
                             /** @type {IDBCursorWithValue} */
@@ -52,7 +52,7 @@
                         };
                         for (const name in store.objectStoreIndexes) {
                             const index = store.objectStoreIndexes[name];
-                            ostore.createIndex(name, index.keyPath, index.options);
+                            if (!ostore.indexNames.contains(name)) ostore.createIndex(name, index.keyPath, index.options);
                         }
                         // @ts-ignore: iterable
                         for (const name of ostore.indexNames) if (!store.objectStoreIndexes[name]) ostore.deleteIndex(name);
