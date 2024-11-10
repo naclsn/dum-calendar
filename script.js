@@ -146,8 +146,10 @@
                 'data-ends': act.ends,
             });
 
+            // @ts-ignore: upcast
             if (!this.acts.childElementCount || this.acts.lastElementChild.dataset.ends < act.begins)
                 this.acts.appendChild(niw);
+            // @ts-ignore: iterable
             else for (const ch of this.acts.children) if (acts.begins <= ch.dataset.ends) {
                 this.acts.insertBefore(niw, ch);
                 break;
@@ -200,6 +202,7 @@
             addEventListener('activityadded', /** @param {ActivityAddedEvent} ev */ ev => {
                 const act = ev.detail[1];
                 const curr = new Date(+this.dataset.monday);
+                // @ts-ignore: iterable
                 for (const day of this.days.children) {
                     if (+curr === act.day) day.addActivity(act);
                     curr.setDate(curr.getDate() + 1);
