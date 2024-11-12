@@ -215,14 +215,21 @@
                 <input name="begins" type="time" />
                 <input name="ends" type="time" />
 
-                <datalist id="interval-datalist">
-                    <option value="lingers"></option>
+                <select name="behave">
+                    <option value=""></option>
+                    <option value="lingers">lingers</option>
+                    <option value="repeats">repeats</option>
+                </select>
+
+                <input name="lingers_until" type="date" />
+
+                <datalist id="repeats_interval-datalist">
                     <option value="monthly"></option>
                     <option value="yearly"></option>
                 </datalist>
-                <input name="interval" list="interval-datalist" pattern="lingers|[0-9]*|monthly|yearly" />
-                <input name="skips" type="number" min="0" />
-                <input name="occurrences" type="number" />
+                <input name="repeats_interval" list="interval-datalist" pattern="lingers|[0-9]*|monthly|yearly" />
+                <input name="repeats_skips" type="number" min="0" />
+                <input name="repeats_occurrences" type="number" />
 
                 <button id="createFormDone">Done</button>
             </form>

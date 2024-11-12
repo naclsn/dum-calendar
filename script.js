@@ -91,8 +91,7 @@
         static objectStoreOptions = { autoIncrement: true };
         static objectStoreIndexes = {
             day: { keyPath: 'day' },
-            occurrences: { keyPath: 'occurrences' },
-            interval: { keyPath: 'interval' },
+            behave: { keyPath: 'behave' },
         };
 
         note = "(empty note)";
@@ -100,9 +99,16 @@
         /** @type {number?} time (ms) */ begins = null;
         /** @type {number?} time (ms) */ ends = null;
 
-        /** @type {'lingers' | number | 'monthly' | 'yearly'} */ interval = 0;
-        skips = 0;
-        occurrences = 0; // 0 is no repeat, 1 is infinite occurrences since `day`, more is count
+        /** @type ('' | 'lingers' | 'repeats'} */ behave = '';
+
+        /** @type {{ until?: number } | undefined} */ lingers;
+        /**
+         * @type {{
+         *     interval: number | 'monthly' | 'yearly'
+         *     skips?: number,
+         *     occurrences?: number,
+         * } | undefined}
+         */ repeats;
 
         constructor(from) {
             if (from) Object.assign(this, from);
@@ -118,7 +124,7 @@
     //    shift = 0;
     //}
 
-    const db = database('dum-calendar', 2, { Activity });
+    const db = database('dum-calendar', 3, { Activity });
     // }}}
 
     // elements {{{
@@ -203,24 +209,22 @@
                     curr.setDate(curr.getDate() + 1);
                 }
 
-                tr.index('occurrences').cursor(IDBKeyRange.lowerBound(1)).forEach(([key, act]) => {
+                tr.index('behave').cursor('lingers').forEach(([key, act]) => {
+                    // TODO: account for `lingers.until`
+                    // @ts-ignore: date arithmetic
+                    for (let k = Math.max(0, (act.day-monday) / 86400000 |0); k < this.days.childElementCount; ++k)
+                        this.days.children[k].addActivity(key, act)
+                });
+
+                tr.index('behave').cursor('repeats').forEach(([key, act]) => {
                     const curr = new Date(monday);
                     // @ts-ignore: iterable
                     for (const day of this.days.children) {
-                        // TODO
-                        act.occurrences
-                        act.interval
-                        act.skips
+                        // TODO: account for `repeats[..]`
                         if (act.day < +curr) // && ...
                             day.addActivity(key, act)
                         curr.setDate(curr.getDate() + 1);
                     }
-                });
-
-                tr.index('interval').cursor('lingers').forEach(([key, act]) => {
-                    // @ts-ignore: date arithmetic
-                    for (let k = Math.max(0, (act.day-monday) / 86400000 |0); k < this.days.childElementCount; ++k)
-                        this.days.children[k].addActivity(key, act)
                 });
             });
 
@@ -230,7 +234,7 @@
                 const curr = new Date(+this.dataset.monday);
                 // @ts-ignore: iterable
                 for (const day of this.days.children) {
-                    // TODO
+                    // TODO: account for `repeats[..]`
                     if (+curr === act.day) // || ...
                         day.addActivity(key, act);
                     curr.setDate(curr.getDate() + 1);
@@ -429,6 +433,7 @@
                     begins: elems.begins.value ? elems.begins.valueAsNumber : null,
                     ends: elems.ends.value ? elems.ends.valueAsNumber : null,
 
+                    // TODO(wip): here
                     interval: isNaN(+elems.interval.value) ? elems.interval.value || 0 : +elems.interval.value,
                     skips: +elems.skips.value || 0,
                     occurrences: +elems.occurrences.value || 0,
