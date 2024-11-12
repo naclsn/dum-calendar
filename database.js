@@ -38,9 +38,7 @@
                     for (const name in this.stores) {
                         const store = this.stores[name];
                         const exists = req.result.objectStoreNames.contains(name);
-                        const ostore = exists
-                            ? req.transaction.objectStore(name)
-                            : req.result.createObjectStore(name, store.objectStoreOptions);
+                        const ostore = exists ? req.transaction.objectStore(name) : req.result.createObjectStore(name, store.objectStoreOptions);
                         if (exists) ostore.openCursor().onsuccess = /** @param {any} ev */ ev => {
                             /** @type {IDBCursorWithValue} */
                             const cursor = ev.target.result;
@@ -184,7 +182,7 @@
         /** @param {(value: [IDBValidKey, C, IDBCursorWithValue]) => void} does */
         forEach(does) {
             // TODO: maybe write it out directly, to 'optimize' out building promises and lambdas
-            this.next().then(({ done, value }) => done || (does(value), this.forEach(does)));
+            return this.next().then(({ done, value }) => done || void (does(value), this.forEach(does)));
         }
     }
 

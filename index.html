@@ -14,16 +14,11 @@
                 height: 100vh;
                 display: flex;
                 flex-direction: column;
-                overflow: hidden;
             }
             #scroll-and-today {
                 flex-grow: 1;
                 display: flex;
-            }
-            @media (orientation: landscape) {
-                #scroll-and-today {
-                    height: 100%;
-                }
+                overflow-y: hidden;
             }
             @media (orientation: portrait) {
                 #scroll-and-today {
@@ -96,6 +91,14 @@
                     transform: translateX(16.66%);
                     position: absolute;
                 }
+                #acts > div[data-begins=null],
+                #acts > div[data-ends=null] {
+                    /* TODO */
+                    width: 15%;
+                    transform: none;
+                    height: 100% !important;
+                    top: 0 !important;
+                }
             </style>
             <div id="acts"></div><span id="num"></span>
         </template>
@@ -142,13 +145,13 @@
                 }
             </style>
             <div id="num">
-            </div><span id="days"><cal-week-day id="mon">
-                   </cal-week-day><cal-week-day id="tue">
-                   </cal-week-day><cal-week-day id="wed">
-                   </cal-week-day><cal-week-day id="thu">
-                   </cal-week-day><cal-week-day id="fri">
-                   </cal-week-day><cal-week-day id="sat">
-                   </cal-week-day><cal-week-day id="sun">
+            </div><span id="days"><cal-week-day class="mon">
+                   </cal-week-day><cal-week-day class="tue">
+                   </cal-week-day><cal-week-day class="wed">
+                   </cal-week-day><cal-week-day class="thu">
+                   </cal-week-day><cal-week-day class="fri">
+                   </cal-week-day><cal-week-day class="sat">
+                   </cal-week-day><cal-week-day class="sun">
                    </cal-week-day></span>
         </template>
 
@@ -170,6 +173,17 @@
             </style>
         <!-- / -->
 
+        <template id="cal-notes-act">
+            <style>
+                :host {
+                    display: list-item;
+                }
+            </style>
+            <span id="time"></span>
+            <span id="note"></span>
+            <button id="delete">Remove</button>
+        </template>
+
         <template id="cal-today-notes">
             <style>
                 :host {
@@ -182,7 +196,8 @@
                     position: relative;
                 }
                 .content {
-                    --overflow-y: scroll
+                    height: 100%;
+                    overflow-y: auto; /*landscape*/
                 }
                 #createForm {
                     position: absolute;
@@ -191,7 +206,7 @@
                     bottom: -100%;
                     transition: bottom .75s;
                     margin: 8%;
-                    background: #f0f; /*-*/
+                    background: #f0f; /* TODO */
                 }
                 @media (orientation: landscape) {
                     #createForm {
@@ -199,6 +214,10 @@
                     }
                 }
                 @media (orientation: portrait) {
+                    :host {
+                        flex-grow: 1;
+                        overflow-y: auto;
+                    }
                     #createForm {
                         height: calc(90% - 4rem);
                     }
@@ -227,7 +246,7 @@
                     <option value="monthly"></option>
                     <option value="yearly"></option>
                 </datalist>
-                <input name="repeats_interval" list="interval-datalist" pattern="lingers|[0-9]*|monthly|yearly" />
+                <input name="repeats_interval" list="interval-datalist" pattern="[0-9]*|monthly|yearly" />
                 <input name="repeats_skips" type="number" min="0" />
                 <input name="repeats_occurrences" type="number" />
 

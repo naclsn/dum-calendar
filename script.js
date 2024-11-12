@@ -59,7 +59,7 @@
 
     // consts {{{
     /** @typedef {Event & {detail: Date}} DayChangedEvent */
-    /** @typedef {Event & {detail: [IDBValidKey, Activity]}} ActivityAddedEvent */
+    /** @typedef {Event & {detail: [number, Activity]}} ActivityAddedEvent */
 
     const NOW = new Date
     const TODAY = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate());
@@ -99,7 +99,7 @@
         /** @type {number?} time (ms) */ begins = null;
         /** @type {number?} time (ms) */ ends = null;
 
-        /** @type ('' | 'lingers' | 'repeats'} */ behave = '';
+        /** @type {'' | 'lingers' | 'repeats'} */ behave = '';
 
         /** @type {{ until?: number } | undefined} */ lingers;
         /**
@@ -188,14 +188,15 @@
             // @ts-ignore: iterable
             for (const day of this.days.children) {
                 day.dataset.date = curr.getDate();
-                day.className = MONTHS[curr.getMonth()].id;
+                day.classList.remove(day.classList[1])
+                day.classList.add(MONTHS[curr.getMonth()].id);
 
                 const timestamp = +curr;
                 if (+todayNotes.dataset.day === timestamp) {
                     this.selected = day;
                     this.selected.id = 'selected-day';
                 }
-                day.onclick = _ => dispatchEvent(new CustomEvent('daychanged', { detail: timestamp }));
+                day.onclick = ev => ev.target.id || dispatchEvent(new CustomEvent('daychanged', { detail: timestamp }));
 
                 curr.setDate(curr.getDate() + 1);
             }
@@ -276,7 +277,10 @@
             if (0 < visible) {
                 const ratio = visible / b.height;
                 // @ts-ignore: iterable
-                for (const day of this.days.children) map.set(day.className, (map.get(day.className) || 0) + ratio);
+                for (const day of this.days.children) {
+                    const month = day.classList[1];
+                    map.set(month, (map.get(month) || 0) + ratio);
+                }
             }
 
             return map;
@@ -397,6 +401,33 @@
         }
     });
 
+    custom('cal-notes-act', class extends HTMLElement {
+        /** @type {HTMLSpanElement} */ time;
+        /** @type {HTMLSpanElement} */ note;
+        /** @type {HTMLButtonElement} */ delete;
+
+        /** @type {number} */ key;
+        /** @type {Activity} */ act;
+
+        /** @param {number} key */
+        /** @param {Activity} act */
+        setActivity(key, act) {
+            this.key = key;
+            this.act = act;
+            const t = h => (h/60|0) + ":" + ("0"+h%60).slice(-2);
+            this.time.textContent = t(act.begins/1000/60) + " - " + t(act.ends/1000/60);
+            this.note.textContent = act.note;
+            // TODO: css classes for behave
+        }
+
+        connectedCallback() {
+            this.delete.onclick = _ =>
+                db.transaction(Activity, 'readwrite')
+                    .then(tr => tr.delete(this.key))
+                    .then(() => console.log("TODO: activitydeleted"));
+        }
+    });
+
     custom('cal-today-notes', class extends HTMLElement {
         /** @type {HTMLHeadingElement} */ heading;
         /** @type {HTMLUListElement} */ list;
@@ -407,10 +438,10 @@
         connectedCallback() {
             addEventListener('daychanged', /** @param {DayChangedEvent} ev */ ev => this.dayChanged(new Date(ev.detail)));
             addEventListener('activityadded', /** @param {ActivityAddedEvent} ev */ ev => {
-                const act = ev.detail[1];
-                if (+this.dataset.day === act.day)
-                    // TODO
-                    this.list.appendChild(elem('li', {}, `note: ${act.note}, begins: ${act.begins / 1000/60/60}, ends: ${act.ends / 1000/60/60}`))
+                const [key, act] = ev.detail;
+                // TODO: lingers and repeats
+                if (+this.dataset.day === act.day) // || ...
+                    this.list.appendChild(elem('cal-notes-act')).setActivity(key, act);
             });
 
             this.create.onclick = _ => {
@@ -420,30 +451,47 @@
                 // @ts-ignore: name="day"
                 this.createForm.elements.day.value = day.getFullYear() + '-' + f(day.getMonth()+1) + '-' + f(day.getDate());
                 // @ts-ignore: name="node"
-                this.createForm.elements.note.focus();
+                setTimeout(() => this.createForm.elements.note.focus(), 2000); // XXX: wtf
             };
             this.createForm.onsubmit = ev => {
                 ev.preventDefault();
-
-                /** @type {any} */
-                const elems = this.createForm.elements;
-                const event = new Activity({
-                    note: elems.note.value,
-                    day: +new Date(elems.day.value + 'T00:00'),
-                    begins: elems.begins.value ? elems.begins.valueAsNumber : null,
-                    ends: elems.ends.value ? elems.ends.valueAsNumber : null,
-
-                    // TODO(wip): here
-                    interval: isNaN(+elems.interval.value) ? elems.interval.value || 0 : +elems.interval.value,
-                    skips: +elems.skips.value || 0,
-                    occurrences: +elems.occurrences.value || 0,
-                });
-
+                const act = this.createActivityFromForm();
                 db.transaction(Activity, 'readwrite')
-                    .then(tr => tr.add(event))
-                    .then(key => dispatchEvent(new CustomEvent('activityadded', { detail: [key, event] })));
+                    .then(tr => tr.add(act))
+                    .then(key => dispatchEvent(new CustomEvent('activityadded', { detail: [key, act] })));
                 this.createForm.style.removeProperty('bottom');
+                this.createForm.reset();
             };
+        }
+
+        createActivityFromForm() {
+            /** @type {any} */
+            const elems = this.createForm.elements;
+
+            const act = new Activity({
+                note: elems.note.value,
+                day: +new Date(elems.day.value + 'T00:00'),
+                begins: elems.begins.value ? elems.begins.valueAsNumber : null,
+                ends: elems.ends.value ? elems.ends.valueAsNumber : null,
+                behave: elems.behave.value,
+            });
+
+            switch (act.behave) {
+                case 'lingers':
+                    act.lingers = {};
+                    if (elems.lingers_until.value) act.lingers.until = +new Date(elems.lingers_until.value + 'T00:00');
+                    break;
+
+                case 'repeats':
+                    act.repeats = {
+                        interval: isNaN(+elems.repeats_interval.value) ? elems.repeats_interval.value || 0 : +elems.repeats_interval.value,
+                    };
+                    if (elems.repeats_skips.value) act.repeats.skips = +elems.repeats_skips.value;
+                    if (elems.repeats_occurrences.value) act.repeats.occurrences = +elems.repeats_occurrences.value;
+                    break;
+            }
+
+            return act;
         }
 
         /** @param {Date} day */
@@ -452,11 +500,11 @@
             this.dataset.day = +day;
             this.heading.textContent = day.toLocaleDateString(undefined, { dateStyle: 'full' });
 
+            // TODO: maybe don't empty list here, but rather replace/append entries `.then` remove extra to limit jitter
             this.list.textContent = null;
-            db.transaction(Activity).then(tr => tr.index('day').cursor(+day).forEach(([_, act]) =>
-                // TODO
-                this.list.appendChild(elem('li', {}, `note: ${act.note}, begins: ${act.begins / 1000/60/60}, ends: ${act.ends / 1000/60/60}`))
-            ));
+            db.transaction(Activity).then(tr => tr.index('day').cursor(+day).forEach(([key, act]) =>
+                this.list.appendChild(elem('cal-notes-act')).setActivity(key, act)));
+            // TODO: all the other ones
         }
     });
     // }}}
