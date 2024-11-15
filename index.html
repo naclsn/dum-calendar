@@ -222,6 +222,9 @@
                         height: calc(90% - 4rem);
                     }
                 }
+                label {
+                    display: block;
+                }
             </style>
             <div class="content">
                 <h2 id="heading"></h2>
@@ -229,26 +232,26 @@
                 <button id="create">Create</button>
             </div>
             <form id="createForm">
-                <input name="note" placeholder="note" required />
-                <input name="day" type="date" required />
-                <input name="begins" type="time" />
-                <input name="ends" type="time" />
+                <label> Note <input name="note" placeholder="note" required /> </label>
+                <label> Day <input name="day" type="date" required /> </label>
+                <label> Begins <input name="begins" type="time" /> </label>
+                <label> Ends <input name="ends" type="time" /> </label>
 
-                <select name="behave">
+                <label> Behave <select name="behave">
                     <option value=""></option>
                     <option value="lingers">lingers</option>
                     <option value="repeats">repeats</option>
-                </select>
+                    </select> </label>
 
-                <input name="lingers_until" type="date" />
+                <label> Lingers until <input name="lingers_until" type="date" /> </label>
 
                 <datalist id="repeats_interval-datalist">
                     <option value="monthly"></option>
+                    <option value="bimonthly"></option>
                     <option value="yearly"></option>
                 </datalist>
-                <input name="repeats_interval" list="interval-datalist" pattern="[0-9]*|monthly|yearly" />
-                <input name="repeats_skips" type="number" min="0" />
-                <input name="repeats_occurrences" type="number" />
+                <label> Repeats interval <input name="repeats_interval" list="interval-datalist" pattern="[0-9]*|(bi)?monthly|yearly" /> </label>
+                <label> Repeats occurences <input name="repeats_occurrences" type="number" /> </label>
 
                 <button id="createFormDone">Done</button>
             </form>

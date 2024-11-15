@@ -59,14 +59,14 @@
 
     // consts {{{
     /** @typedef {Event & {detail: Date}} DayChangedEvent */
-    /** @typedef {Event & {detail: [number, Activity]}} ActivityAddedEvent */
+    /** @typedef {Event & {detail: [IDBValidKey, Activity]}} ActivityAddedEvent */
+    /** @typedef {Event & {detail: [IDBValidKey, Activity]}} ActivityDeletedEvent */
 
     const NOW = new Date
     const TODAY = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate());
     /** @var {InstanceType<CalMonthsBar>} monthsBar */
     /** @var {InstanceType<CalScrollView>} scrollView */
     /** @var {InstanceType<CalTodayNotes>} todayNotes */
-    /** @event {Date | number} daychanged */
 
     /** @type {{days: number, id: string, name: string}[]} */
     // @ts-ignore: name
@@ -74,12 +74,6 @@
     for (let k = 0; k < MONTHS.length; ++k) {
         MONTHS[k].name = new Date(0, k).toLocaleString(undefined, { month: 'long' });
         MONTHS[MONTHS[k].id] = k;
-    }
-
-    /** @param {Activity} act */
-    function activityColor(act) {
-        const hash = act.note.split("\n", 1)[0].split("").reduce((acc, cur) => ((acc << 5) - acc + cur.charCodeAt(0))|0, 0);
-        return 'hsl(' + hash%360 + ', 80%, 50%)';
     }
 
     const DAY_BEGINS = 7 * 60*60*1000;
@@ -104,14 +98,41 @@
         /** @type {{ until?: number } | undefined} */ lingers;
         /**
          * @type {{
-         *     interval: number | 'monthly' | 'yearly'
-         *     skips?: number,
+         *     interval: number | 'monthly' | 'bimonthly' | 'yearly'
          *     occurrences?: number,
          * } | undefined}
          */ repeats;
 
         constructor(from) {
             if (from) Object.assign(this, from);
+        }
+
+        backgroundColor() {
+            const hash = this.note.split("\n", 1)[0].split("").reduce((acc, cur) => ((acc << 5) - acc + cur.charCodeAt(0))|0, 0);
+            return 'hsl(' + hash%360 + ', 80%, 50%)';
+        }
+
+        /** @param {Date} day */
+        doesLingersToday(day) {
+            // @ts-ignore: date arithmetic
+            return this.day < day && (!this.lingers.until || day <= this.lingers.until);
+        }
+
+        /** @param {Date} day */
+        doesRepeatsToday(day) {
+            // @ts-ignore: date arithmetic
+            if (day < this.day) return false;
+            const tay = new Date(this.day);
+
+            switch (this.repeats.interval) {
+                case 'monthly':   return day.getDate() === tay.getDate();
+                case 'bimonthly': return day.getDate() === tay.getDate() && 0 === (day.getMonth() - tay.getMonth()) % 2;
+                case 'yearly':    return day.getDate() === tay.getDate() && day.getMonth() === tay.getMonth();
+            }
+
+            // @ts-ignore: date arithmetic
+            const dayCount = Math.round((day - tay) / 86400000);
+            return 0 === dayCount % this.repeats.interval;
         }
     }
 
@@ -152,11 +173,12 @@
             const niw = elem('div', {
                 style: {
                     height: (act.ends-act.begins) / hundred+'%',
-                    backgroundColor: activityColor(act),
+                    backgroundColor: act.backgroundColor(),
                     top: (act.begins-DAY_BEGINS) / hundred+'%',
                 },
                 'data-begins': act.begins,
                 'data-ends': act.ends,
+                'data-key': key,
             });
 
             // @ts-ignore: upcast
@@ -165,6 +187,18 @@
             // @ts-ignore: iterable
             else for (const ch of this.acts.children) if (act.begins <= ch.dataset.ends) {
                 this.acts.insertBefore(niw, ch);
+                break;
+            }
+        }
+
+        /** @param {IDBValidKey} key */
+        deleteActivity(key) {
+            if (!this.keys.has(key)) return;
+            this.keys.delete(key);
+
+            // @ts-ignore: iterable
+            for (const ch of this.acts.children) if (key == ch.dataset.key) {
+                ch.remove();
                 break;
             }
         }
@@ -182,73 +216,67 @@
                 this.selected = null;
             }
 
-            const monday = new Date(+this.dataset.monday);
-
-            const curr = new Date(monday);
-            // @ts-ignore: iterable
-            for (const day of this.days.children) {
+            this.forEachDays((day, curr) => {
+                // @ts-ignore: toString
                 day.dataset.date = curr.getDate();
                 day.classList.remove(day.classList[1])
                 day.classList.add(MONTHS[curr.getMonth()].id);
 
                 const timestamp = +curr;
                 if (+todayNotes.dataset.day === timestamp) {
+                    // @ts-ignore: upcast
                     this.selected = day;
                     this.selected.id = 'selected-day';
                 }
+                // @ts-ignore: target is HTMLElement
                 day.onclick = ev => ev.target.id || dispatchEvent(new CustomEvent('daychanged', { detail: timestamp }));
-
-                curr.setDate(curr.getDate() + 1);
-            }
+            });
 
             db.transaction(Activity).then(tr => {
                 const dayIndex = tr.index('day');
-                const curr = new Date(monday);
-                // @ts-ignore: iterable
-                for (const day of this.days.children) {
-                    dayIndex.cursor(+curr).forEach(([key, act]) => day.addActivity(key, act));
-                    curr.setDate(curr.getDate() + 1);
-                }
+                this.forEachDays((day, curr) =>
+                    dayIndex.cursor(+curr).forEach(([key, act]) => day.addActivity(key, act)));
 
-                tr.index('behave').cursor('lingers').forEach(([key, act]) => {
-                    // TODO: account for `lingers.until`
-                    // @ts-ignore: date arithmetic
-                    for (let k = Math.max(0, (act.day-monday) / 86400000 |0); k < this.days.childElementCount; ++k)
-                        this.days.children[k].addActivity(key, act)
-                });
+                tr.index('behave').cursor('lingers').forEach(([key, act]) =>
+                    this.forEachDays((day, curr) => act.doesLingersToday(curr) &&
+                        day.addActivity(key, act)));
 
-                tr.index('behave').cursor('repeats').forEach(([key, act]) => {
-                    const curr = new Date(monday);
-                    // @ts-ignore: iterable
-                    for (const day of this.days.children) {
-                        // TODO: account for `repeats[..]`
-                        if (act.day < +curr) // && ...
-                            day.addActivity(key, act)
-                        curr.setDate(curr.getDate() + 1);
-                    }
-                });
+                tr.index('behave').cursor('repeats').forEach(([key, act]) =>
+                    this.forEachDays((day, curr) => act.doesRepeatsToday(curr) &&
+                        day.addActivity(key, act)));
             });
 
             addEventListener('daychanged', /** @param {DayChangedEvent} ev */ ev => this.dayChanged(new Date(ev.detail)));
             addEventListener('activityadded', /** @param {ActivityAddedEvent} ev */ ev => {
                 const [key, act] = ev.detail;
-                const curr = new Date(+this.dataset.monday);
-                // @ts-ignore: iterable
-                for (const day of this.days.children) {
-                    // TODO: account for `repeats[..]`
-                    if (+curr === act.day) // || ...
+                this.forEachDays((day, curr) => {
+                    if (+curr === act.day ||
+                        'lingers' === act.behave && act.doesLingersToday(curr) ||
+                        'repeats' === act.behave && act.doesRepeatsToday(curr))
                         day.addActivity(key, act);
-                    curr.setDate(curr.getDate() + 1);
-                }
+                });
             });
+            addEventListener('activitydeleted', /** @param {ActivityDeletedEvent} ev */ ev =>
+                this.forEachDays(day =>
+                    day.deleteActivity(ev.detail[0])));
 
-            const thursday = new Date(monday);
+            const thursday = new Date(+this.dataset.monday);
             thursday.setDate(thursday.getDate() - 3);
             const first = new Date(thursday.getFullYear(), 0);
             // @ts-ignore: date arithmetic
             const weekNum = Math.ceil((((thursday - first) / 86400000) + 1) / 7);
             // @ts-ignore: toString
             this.num.textContent = weekNum;
+        }
+
+        /** @param {(day: HTMLElement, curr: Date) => void} does */
+        forEachDays(does) {
+            const curr = new Date(+this.dataset.monday);
+            // @ts-ignore: iterable
+            for (const day of this.days.children) {
+                does(day, curr);
+                curr.setDate(curr.getDate() + 1);
+            }
         }
 
         /** @param {Date} day */
@@ -406,17 +434,18 @@
         /** @type {HTMLSpanElement} */ note;
         /** @type {HTMLButtonElement} */ delete;
 
-        /** @type {number} */ key;
+        /** @type {IDBValidKey} */ key;
         /** @type {Activity} */ act;
 
-        /** @param {number} key */
+        /** @param {IDBValidKey} key */
         /** @param {Activity} act */
         setActivity(key, act) {
             this.key = key;
             this.act = act;
             const t = h => (h/60|0) + ":" + ("0"+h%60).slice(-2);
-            this.time.textContent = t(act.begins/1000/60) + " - " + t(act.ends/1000/60);
+            this.time.textContent = act.begins || act.ends ? t(act.begins/1000/60) + " - " + t(act.ends/1000/60) : "whole day";
             this.note.textContent = act.note;
+            this.note.appendChild(document.createComment(JSON.stringify(act)));
             // TODO: css classes for behave
         }
 
@@ -424,13 +453,13 @@
             this.delete.onclick = _ =>
                 db.transaction(Activity, 'readwrite')
                     .then(tr => tr.delete(this.key))
-                    .then(() => console.log("TODO: activitydeleted"));
+                    .then(_ => dispatchEvent(new CustomEvent('activitydeleted', { detail: [this.key, this.act] })));
         }
     });
 
     custom('cal-today-notes', class extends HTMLElement {
         /** @type {HTMLHeadingElement} */ heading;
-        /** @type {HTMLUListElement} */ list;
+        /** @type {HTMLUListElement} */ list; // TODO: list should probably be insert-sorted too!
         /** @type {HTMLButtonElement} */ create;
         /** @type {HTMLFormElement} */ createForm;
         /** @type {HTMLButtonElement} */ createFormDone;
@@ -439,9 +468,20 @@
             addEventListener('daychanged', /** @param {DayChangedEvent} ev */ ev => this.dayChanged(new Date(ev.detail)));
             addEventListener('activityadded', /** @param {ActivityAddedEvent} ev */ ev => {
                 const [key, act] = ev.detail;
-                // TODO: lingers and repeats
-                if (+this.dataset.day === act.day) // || ...
+                const curr = new Date(+this.dataset.day);
+                if (+this.dataset.day === act.day ||
+                    'lingers' === act.behave && act.doesLingersToday(curr) ||
+                    'repeats' === act.behave && act.doesRepeatsToday(curr))
                     this.list.appendChild(elem('cal-notes-act')).setActivity(key, act);
+
+            });
+            addEventListener('activitydeleted', /** @param {ActivityDeletedEvent} ev */ ev => {
+                const [key] = ev.detail;
+                // @ts-ignore: iterable
+                for (const ch of this.list.children) if (key === ch.key) {
+                    ch.remove();
+                    break;
+                }
             });
 
             this.create.onclick = _ => {
@@ -451,7 +491,7 @@
                 // @ts-ignore: name="day"
                 this.createForm.elements.day.value = day.getFullYear() + '-' + f(day.getMonth()+1) + '-' + f(day.getDate());
                 // @ts-ignore: name="node"
-                setTimeout(() => this.createForm.elements.note.focus(), 2000); // XXX: wtf
+                //setTimeout(() => this.createForm.elements.note.focus(), 2000); // XXX: wtf
             };
             this.createForm.onsubmit = ev => {
                 ev.preventDefault();
@@ -486,7 +526,6 @@
                     act.repeats = {
                         interval: isNaN(+elems.repeats_interval.value) ? elems.repeats_interval.value || 0 : +elems.repeats_interval.value,
                     };
-                    if (elems.repeats_skips.value) act.repeats.skips = +elems.repeats_skips.value;
                     if (elems.repeats_occurrences.value) act.repeats.occurrences = +elems.repeats_occurrences.value;
                     break;
             }
@@ -500,11 +539,31 @@
             this.dataset.day = +day;
             this.heading.textContent = day.toLocaleDateString(undefined, { dateStyle: 'full' });
 
-            // TODO: maybe don't empty list here, but rather replace/append entries `.then` remove extra to limit jitter
+            // TODO: limit jitter by making a new element (simplest solution)
             this.list.textContent = null;
-            db.transaction(Activity).then(tr => tr.index('day').cursor(+day).forEach(([key, act]) =>
-                this.list.appendChild(elem('cal-notes-act')).setActivity(key, act)));
-            // TODO: all the other ones
+
+            db.transaction(Activity).then(tr => {
+                const keys = new Set;
+
+                tr.index('day').cursor(+day).forEach(([key, act]) => {
+                    keys.add(key);
+                    this.list.appendChild(elem('cal-notes-act')).setActivity(key, act);
+                });
+
+                tr.index('behave').cursor('lingers').forEach(([key, act]) => {
+                    if (!keys.has(key) && act.doesLingersToday(day)) {
+                        keys.add(key);
+                        this.list.appendChild(elem('cal-notes-act')).setActivity(key, act);
+                    }
+                });
+
+                tr.index('behave').cursor('repeats').forEach(([key, act]) => {
+                    if (!keys.has(key) && act.doesRepeatsToday(day)) {
+                        keys.add(key);
+                        this.list.appendChild(elem('cal-notes-act')).setActivity(key, act);
+                    }
+                });
+            });
         }
     });
     // }}}

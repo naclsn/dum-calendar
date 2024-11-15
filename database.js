@@ -173,7 +173,7 @@
                 this.openedCursor.onerror = _ => rej(this.openedCursor.error);
                 this.openedCursor.onsuccess = _ => {
                     const c = this._cursor = this.openedCursor.result;
-                    res({ done: this._done = !c, value: c && [c.key, new this.store(c.value), c] });
+                    res({ done: this._done = !c, value: c && [c.primaryKey, new this.store(c.value), c] });
                 };
                 if (this._cursor) this._cursor.continue();
             });
