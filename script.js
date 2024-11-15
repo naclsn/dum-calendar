@@ -229,7 +229,7 @@
                     this.selected.id = 'selected-day';
                 }
                 // @ts-ignore: target is HTMLElement
-                day.onclick = ev => ev.target.id || dispatchEvent(new CustomEvent('daychanged', { detail: timestamp }));
+                day.onclick = ev => ev.target.id || dispatchEvent(new CustomEvent('daychanged', { detail: new Date(timestamp) }));
             });
 
             db.transaction(Activity).then(tr => {
@@ -246,7 +246,7 @@
                         day.addActivity(key, act)));
             });
 
-            addEventListener('daychanged', /** @param {DayChangedEvent} ev */ ev => this.dayChanged(new Date(ev.detail)));
+            addEventListener('daychanged', /** @param {DayChangedEvent} ev */ ev => this.dayChanged(ev.detail));
             addEventListener('activityadded', /** @param {ActivityAddedEvent} ev */ ev => {
                 const [key, act] = ev.detail;
                 this.forEachDays((day, curr) => {
@@ -465,7 +465,7 @@
         /** @type {HTMLButtonElement} */ createFormDone;
 
         connectedCallback() {
-            addEventListener('daychanged', /** @param {DayChangedEvent} ev */ ev => this.dayChanged(new Date(ev.detail)));
+            addEventListener('daychanged', /** @param {DayChangedEvent} ev */ ev => this.dayChanged(ev.detail));
             addEventListener('activityadded', /** @param {ActivityAddedEvent} ev */ ev => {
                 const [key, act] = ev.detail;
                 const curr = new Date(+this.dataset.day);
@@ -570,4 +570,32 @@
 
     document.head.appendChild(elem('title', {}, TODAY.toLocaleDateString()));
     dispatchEvent(new CustomEvent('daychanged', { detail: TODAY }));
+
+    addEventListener('keypress', ev => {
+        if (ev.target !== scrollView) return;
+        const does = ({
+            h() {
+                const d = new Date(+todayNotes.dataset.day);
+                d.setDate(d.getDate() - 1);
+                dispatchEvent(new CustomEvent('daychanged', { detail: d }));
+            },
+            j() {
+                const d = new Date(+todayNotes.dataset.day);
+                d.setDate(d.getDate() + 7);
+                dispatchEvent(new CustomEvent('daychanged', { detail: d }));
+            },
+            k() {
+                const d = new Date(+todayNotes.dataset.day);
+                d.setDate(d.getDate() - 7);
+                dispatchEvent(new CustomEvent('daychanged', { detail: d }));
+            },
+            l() {
+                const d = new Date(+todayNotes.dataset.day);
+                d.setDate(d.getDate() + 1);
+                dispatchEvent(new CustomEvent('daychanged', { detail: d }));
+            },
+        })[ev.key];
+        if (does && false !== does()) ev.preventDefault();
+    });
+    scrollView.focus();
 });
