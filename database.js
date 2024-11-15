@@ -179,10 +179,13 @@
             });
         }
 
-        /** @param {(value: [IDBValidKey, C, IDBCursorWithValue]) => void} does */
+        /**
+         * @param {(value: [IDBValidKey, C, IDBCursorWithValue]) => void} does
+         * @returns {Promise<void>}
+         */
         forEach(does) {
             // TODO: maybe write it out directly, to 'optimize' out building promises and lambdas
-            return this.next().then(({ done, value }) => done || void (does(value), this.forEach(does)));
+            return this.next().then(({ done, value }) => done || (does(value), this.forEach(does)));
         }
     }
 

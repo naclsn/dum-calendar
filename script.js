@@ -464,6 +464,9 @@
         /** @type {HTMLFormElement} */ createForm;
         /** @type {HTMLButtonElement} */ createFormDone;
 
+        /** @type {HTMLButtonElement} */ dump;
+        /** @type {HTMLButtonElement} */ load;
+
         connectedCallback() {
             addEventListener('daychanged', /** @param {DayChangedEvent} ev */ ev => this.dayChanged(ev.detail));
             addEventListener('activityadded', /** @param {ActivityAddedEvent} ev */ ev => {
@@ -502,6 +505,19 @@
                 this.createForm.style.removeProperty('bottom');
                 this.createForm.reset();
             };
+
+            this.dump.onclick = async _ => {
+                const lines = [];
+                await db.transaction(Activity).then(tr => tr.cursor().forEach(([key, act]) => lines.push("[" + key + "," + JSON.stringify(act) + "]") && console.log(act)));
+                const a = document.body.appendChild(elem('a', {
+                    href: URL.createObjectURL(new Blob(["[" + lines.join("\n,") + "\n]"], { type: 'application/json' })),
+                    download: "dump.json",
+                }));
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(a.href);
+            };
+            this.load.onclick = _ => alert("no");
         }
 
         createActivityFromForm() {
