@@ -1,0 +1,16 @@
+{
+  "name": "Dum Calendar",
+  "short_name": "dum-calendar",
+  "description": "A dum calendar.",
+  "start_url": "index.html",
+  "icons": [
+    {
+      "src": "largicon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "theme_color": "#0b00b1",
+  "background_color": "#b0b1b0",
+  "display": "standalone"
+}
